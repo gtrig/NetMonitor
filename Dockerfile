@@ -7,7 +7,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /netmon ./cmd/netmon
 
 FROM alpine:3.22
-RUN apk add --no-cache nmap ca-certificates tzdata libcap \
+RUN apk add --no-cache nmap nmap-nselibs nmap-scripts ca-certificates tzdata libcap \
  && setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip /usr/bin/nmap \
  && adduser -D -H -u 10001 netmon \
  && mkdir -p /data /config && chmod 1777 /data
