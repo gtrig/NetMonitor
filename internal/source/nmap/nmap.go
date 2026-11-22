@@ -48,7 +48,7 @@ func ParseProgress(line string) (Progress, bool) {
 	if err != nil || math.IsNaN(pct) || pct < 0 || pct > 100 {
 		return Progress{}, false
 	}
-	return Progress{Task: html.UnescapeString(m[1]), Percent: pct}, true
+	return Progress{Task: strings.TrimSuffix(html.UnescapeString(m[1]), "."), Percent: pct}, true
 }
 
 // DefaultExec runs the nmap binary from PATH, reporting progress lines as they arrive.

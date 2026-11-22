@@ -39,12 +39,21 @@ Networks, routers, SNMP targets, notification channels and rules can be managed 
 
 The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_GID` in `.env`, default 1000) so it can write the file.
 
+## Several networks, machines and cleanup
+
+- **All-networks map.** With more than one network, the map's default view draws each network as a box. Pick a network to see it alone.
+- **Traceroute.** Tick **Traceroute** on an nmap source (or set `traceroute: true`). nmap then records the routers on the path to each host, which draws how your networks connect, e.g. LAN → VPN hub → remote LAN. Hop addresses that netmon doesn't otherwise know show as small grey diamonds.
+- **Machines.** One box with addresses in several networks (a router, a VPN endpoint) is found once per network. On the **Devices** page, tick its rows and click **Merge selected into one machine**. The map then shows it as one node with all its addresses, sitting between the networks it joins. **Split** undoes it. The same MAC address seen in two networks is drawn as one node automatically.
+- **Renames keep data.** Renaming a network on the Settings page moves its devices and history to the new name.
+- **Cleanup.** Data under network names that are no longer configured is listed on the Settings page: **Merge into** a configured network, or **Delete** it (events are kept). **Forget** on the Devices page removes a single device; it comes back if it is seen again.
+- **Scan jobs.** The Overview page shows every scan job live: running (with nmap's phase and percentage), queued (waiting for one of 4 slots) or idle (with a countdown to the next run), plus the last duration and error, and **Scan now** per job. Remote networks usually spend most of a scan on reverse DNS; add `-n` to the nmap args to skip it if you don't need names.
+
 ## Configuration
 
 Everything lives in `config/config.yaml`; `${VAR}` references are filled from the environment (`.env`). See [config/config.example.yaml](config/config.example.yaml) for a complete example.
 
 - **networks**: `name`, `cidr`, optional `exclude` (IPs to ignore) and `sources`. Hosts outside the CIDR are ignored, so one router can feed several networks.
-- **sources**: `{type: router|snmp|nmap, ref: <router or snmp target name>, interval: 1m}`. Default interval `5m`. Extra nmap flags go in `args` (port/OS/version scan flags are rejected).
+- **sources**: `{type: router|snmp|nmap, ref: <router or snmp target name>, interval: 1m}`. Default interval `5m`. Extra nmap flags go in `args` (port/OS/version scan flags are rejected); `traceroute: true` (nmap only) maps the routers in between.
 - **Offline detection**: a device is reported offline once *every* source that has seen it has missed it on 3 consecutive successful collections (override with `offline_after: 30m` per network). Failed collections (router unreachable, wrong password) never mark devices offline.
 - **channels**: `telegram` (`bot_token`, `chat_id`), `discord` (`webhook_url`), `email` (`smtp_host`, `smtp_port`, `starttls`, `username`, `password`, `from`, `to`). Port 465 uses implicit TLS.
 - **rules**: which `events` (empty = all), for which `networks` (empty = all), go to which `channels`. `only_unknown: true` skips devices you've marked as known in the UI. Changes from one collection are batched into one message per channel.
