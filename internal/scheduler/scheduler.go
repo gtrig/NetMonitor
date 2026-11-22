@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -19,6 +20,9 @@ import (
 
 // ErrUnknownNetwork is returned by ScanNow for a network that has no jobs.
 var ErrUnknownNetwork = errors.New("unknown network")
+
+// ErrUnknownDevice is returned by ScanDevice for a device that is not stored.
+var ErrUnknownDevice = errors.New("unknown device")
 
 // ErrUnknownJob is returned by ScanJob for a job id that does not exist.
 var ErrUnknownJob = errors.New("unknown job")
@@ -36,12 +40,27 @@ const MaxConcurrent = 4
 // EventSink receives new events (the notification dispatcher).
 type EventSink interface{ Enqueue([]model.Event) }
 
-// Job is one source collecting one network.
+// DetailScanner runs detailed (services) scans of given addresses.
+type DetailScanner interface {
+	Name() string
+	Scan(ctx context.Context, targets []netip.Addr) ([]model.HostDetails, error)
+}
+
+// Job is one source collecting one network: presence (Source) or details (Details).
 type Job struct {
 	Network      config.Network
 	Source       source.Source
+	Details      DetailScanner
 	Interval     time.Duration
 	OfflineAfter time.Duration
+}
+
+// Name is the job's source name.
+func (j Job) Name() string {
+	if j.Details != nil {
+		return j.Details.Name()
+	}
+	return j.Source.Name()
 }
 
 // JobStatus describes a job: its current state and its last run.
@@ -75,15 +94,21 @@ type Scheduler struct {
 	mu      sync.Mutex
 	status  []JobStatus
 	netLock map[string]*sync.Mutex
+	adhoc   map[string]*JobStatus // on-demand device detail scans, by network|key
+	adhocWG sync.WaitGroup
+	runCtx  context.Context // set while Run is active
+
+	// DefaultDetails scans devices on demand in networks without a services job.
+	DefaultDetails DetailScanner
 }
 
 // New returns a scheduler. oui and res may be nil.
 func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver, jobs []Job) *Scheduler {
 	s := &Scheduler{st: st, sink: sink, oui: oui, res: res, jobs: jobs, sem: make(chan struct{}, MaxConcurrent),
-		netLock: map[string]*sync.Mutex{}}
+		netLock: map[string]*sync.Mutex{}, adhoc: map[string]*JobStatus{}}
 	for i, j := range jobs {
 		s.trigger = append(s.trigger, make(chan struct{}, 1))
-		s.status = append(s.status, JobStatus{ID: i, Network: j.Network.Name, Source: j.Source.Name(),
+		s.status = append(s.status, JobStatus{ID: i, Network: j.Network.Name, Source: j.Name(),
 			Interval: humanDuration(j.Interval), State: StateIdle})
 		if s.netLock[j.Network.Name] == nil {
 			s.netLock[j.Network.Name] = &sync.Mutex{}
@@ -95,7 +120,11 @@ func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver,
 // Run starts every job (immediately, then every Interval) and blocks until ctx is done
 // and in-flight collections have finished.
 func (s *Scheduler) Run(ctx context.Context) {
+	s.mu.Lock()
+	s.runCtx = ctx
+	s.mu.Unlock()
 	var wg sync.WaitGroup
+	defer s.adhocWG.Wait()
 	for i := range s.jobs {
 		wg.Add(1)
 		go func(i int) {
@@ -130,7 +159,7 @@ func (s *Scheduler) runGuarded(ctx context.Context, i int) {
 	}
 	defer func() { <-s.sem }()
 	if err := s.RunOnce(ctx, s.jobs[i]); err != nil && ctx.Err() == nil {
-		slog.Warn("collection failed", "network", s.jobs[i].Network.Name, "source", s.jobs[i].Source.Name(), "err", err)
+		slog.Warn("collection failed", "network", s.jobs[i].Network.Name, "source", s.jobs[i].Name(), "err", err)
 	}
 }
 
@@ -169,6 +198,9 @@ func (s *Scheduler) Status() []JobStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := append([]JobStatus(nil), s.status...)
+	for _, a := range s.adhoc {
+		out = append(out, *a)
+	}
 	for i := range out {
 		if p := out[i].Progress; p != nil {
 			v := *p
@@ -188,7 +220,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.status {
-		if s.jobs[i].Source == j.Source && s.jobs[i].Network.Name == j.Network.Name {
+		if s.jobs[i].Name() == j.Name() && s.jobs[i].Network.Name == j.Network.Name {
 			f(&s.status[i])
 		}
 	}
@@ -198,7 +230,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 func (s *Scheduler) thresholds(network string) map[string]time.Duration {
 	out := map[string]time.Duration{}
 	for _, j := range s.jobs {
-		if j.Network.Name == network {
+		if j.Network.Name == network && j.Details == nil {
 			out[j.Source.Name()] = j.OfflineAfter
 		}
 	}
@@ -239,6 +271,9 @@ func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
 }
 
 func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
+	if j.Details != nil {
+		return s.runDetails(ctx, j.Network.Name, j.Details, "")
+	}
 	obs, err := j.Source.Collect(ctx, j.Network)
 	if err != nil {
 		return err
