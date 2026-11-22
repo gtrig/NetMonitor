@@ -60,7 +60,7 @@ func TestSaveWritesFileAndSwapsRuntime(t *testing.T) {
 	raw := a.Raw()
 	raw.Networks = append(raw.Networks, config.Network{Name: "iot", CIDR: netip.MustParsePrefix("10.0.1.0/24"),
 		Sources: []config.SourceRef{{Type: "nmap"}}})
-	if err := a.Save(raw); err != nil {
+	if err := a.Save(raw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := len(a.Current().Config.Networks); got != 2 {
@@ -82,7 +82,7 @@ func TestSaveInvalidKeepsFileAndRuntime(t *testing.T) {
 	old := a.Current()
 	raw := a.Raw()
 	raw.Networks[0].Sources[0] = config.SourceRef{Type: "router", Ref: "ghost"}
-	err := a.Save(raw)
+	err := a.Save(raw, nil)
 	if err == nil || !strings.Contains(err.Error(), "ghost") {
 		t.Fatalf("err = %v", err)
 	}
@@ -126,5 +126,24 @@ func TestRawIsACopy(t *testing.T) {
 	r.Networks[0].Name = "changed"
 	if a.Raw().Networks[0].Name != "lan" {
 		t.Fatal("Raw returned shared state")
+	}
+}
+
+func TestSaveRenamesNetworkData(t *testing.T) {
+	a, _ := setup(t)
+	st := a.opts.Store
+	ctx := context.Background()
+	now := time.Now().UTC()
+	st.UpsertDevices(ctx, []model.Device{{Network: "lan", Key: "mac:aa", FirstSeen: now, LastSeen: now}})
+	raw := a.Raw()
+	raw.Networks[0].Name = "home"
+	if err := a.Save(raw, map[string]string{"lan": "home"}); err != nil {
+		t.Fatal(err)
+	}
+	if ds, _ := st.Devices(ctx, "home"); len(ds) != 1 {
+		t.Fatalf("devices under new name = %d", len(ds))
+	}
+	if ds, _ := st.Devices(ctx, "lan"); len(ds) != 0 {
+		t.Fatalf("devices left under old name = %d", len(ds))
 	}
 }

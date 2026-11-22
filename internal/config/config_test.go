@@ -141,3 +141,22 @@ func mustPrefix(t *testing.T, s string) netip.Prefix {
 	}
 	return p
 }
+
+func TestTracerouteOnlyForNmap(t *testing.T) {
+	_, err := Parse([]byte(`
+routers:
+  - {name: core, type: mikrotik, address: 1.2.3.4:8728, username: u, password: p}
+networks:
+  - {name: lan, cidr: 10.0.0.0/24, sources: [{type: router, ref: core, traceroute: true}]}
+`))
+	if err == nil || !strings.Contains(err.Error(), "traceroute") {
+		t.Fatalf("err = %v", err)
+	}
+	c, err := Parse([]byte(`
+networks:
+  - {name: lan, cidr: 10.0.0.0/24, sources: [{type: nmap, traceroute: true}]}
+`))
+	if err != nil || !c.Networks[0].Sources[0].Traceroute {
+		t.Fatalf("nmap traceroute: %v", err)
+	}
+}

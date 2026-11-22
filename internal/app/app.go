@@ -108,7 +108,8 @@ func clone(c *config.Config) *config.Config {
 
 // Save validates raw, writes it to the config file and switches to a runtime built from it.
 // Nothing is written or changed when raw is invalid.
-func (a *App) Save(raw *config.Config) error {
+// renames (old network name → new) move stored data to the new names before the new runtime starts.
+func (a *App) Save(raw *config.Config, renames map[string]string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	eff, err := config.Effective(raw)
@@ -118,7 +119,7 @@ func (a *App) Save(raw *config.Config) error {
 	if err := config.Save(a.path, raw); err != nil {
 		return err
 	}
-	return a.swap(clone(raw), eff)
+	return a.swap(clone(raw), eff, renames)
 }
 
 // Reload re-reads the config file. The current runtime keeps running if the file is invalid.
@@ -133,10 +134,10 @@ func (a *App) Reload() error {
 	if err != nil {
 		return err
 	}
-	return a.swap(raw, eff)
+	return a.swap(raw, eff, nil)
 }
 
-func (a *App) swap(raw, eff *config.Config) error {
+func (a *App) swap(raw, eff *config.Config, renames map[string]string) error {
 	old := a.Current()
 	if eff.Listen != old.Config.Listen || eff.DataDir != old.Config.DataDir {
 		slog.Warn("listen/data_dir changes take effect after a restart")
@@ -146,6 +147,11 @@ func (a *App) swap(raw, eff *config.Config) error {
 		return err // fail before stopping the running runtime
 	}
 	old.stop()
+	for from, to := range renames {
+		if err := a.opts.Store.RenameNetwork(context.Background(), from, to); err != nil {
+			slog.Error("moving stored data of renamed network", "from", from, "to", to, "err", err)
+		}
+	}
 	rt, err := a.start(eff)
 	if err != nil {
 		return err

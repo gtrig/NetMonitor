@@ -55,6 +55,9 @@ func Mask(raw *config.Config) Editable {
 		Channels:    nonNil(slices.Clone(raw.Channels)),
 		Rules:       nonNil(slices.Clone(raw.Rules)),
 	}
+	for i := range e.Networks {
+		e.Networks[i].OriginalName = e.Networks[i].Name
+	}
 	for i := range e.Routers {
 		e.Routers[i].OriginalName = e.Routers[i].Name
 		for _, p := range routerSecrets(&e.Routers[i]) {
@@ -123,6 +126,9 @@ func merge[T any](in, prev []T, name, origName func(*T) string, secrets func(*T)
 func Apply(raw *config.Config, e Editable) *config.Config {
 	out := *raw
 	out.Networks = slices.Clone(e.Networks)
+	for i := range out.Networks {
+		out.Networks[i].OriginalName = ""
+	}
 	out.Rules = slices.Clone(e.Rules)
 	out.Routers = merge(e.Routers, raw.Routers,
 		func(r *config.Router) string { return r.Name }, func(r *config.Router) string { return r.OriginalName }, routerSecrets,
@@ -134,4 +140,26 @@ func Apply(raw *config.Config, e Editable) *config.Config {
 		func(c *config.Channel) string { return c.Name }, func(c *config.Channel) string { return c.OriginalName }, channelSecrets,
 		func(c *config.Channel) { c.OriginalName = "" })
 	return &out
+}
+
+// NetworkRenames returns old name → new name for every network in e that was renamed from a
+// network of raw. Only the first item claiming an original name counts.
+func NetworkRenames(raw *config.Config, e Editable) map[string]string {
+	existing := map[string]bool{}
+	for _, n := range raw.Networks {
+		existing[n.Name] = true
+	}
+	out := map[string]string{}
+	claimed := map[string]bool{}
+	for _, n := range e.Networks {
+		o := n.OriginalName
+		if o == "" || claimed[o] || !existing[o] {
+			continue
+		}
+		claimed[o] = true
+		if o != n.Name {
+			out[o] = n.Name
+		}
+	}
+	return out
 }

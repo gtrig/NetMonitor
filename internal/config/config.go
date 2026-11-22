@@ -70,6 +70,8 @@ type SNMPTarget struct {
 }
 
 type Network struct {
+	// OriginalName is set by the settings UI so a rename can carry stored data; never saved.
+	OriginalName string       `yaml:"-" json:"original_name,omitempty"`
 	Name         string       `yaml:"name,omitempty" json:"name,omitempty"`
 	CIDR         netip.Prefix `yaml:"cidr" json:"cidr"`
 	Sources      []SourceRef  `yaml:"sources,omitempty" json:"sources,omitempty"`
@@ -82,6 +84,8 @@ type SourceRef struct {
 	Ref      string   `yaml:"ref,omitempty" json:"ref,omitempty"`
 	Interval Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
 	Args     []string `yaml:"args,omitempty" json:"args,omitempty"`
+	// Traceroute (nmap only) records the routers on the path to each host.
+	Traceroute bool `yaml:"traceroute,omitempty" json:"traceroute,omitempty"`
 }
 
 type Channel struct {
@@ -296,6 +300,9 @@ func (c *Config) Validate() error {
 			bad("network %q: at least one source is required", n.Name)
 		}
 		for _, s := range n.Sources {
+			if s.Traceroute && s.Type != "nmap" {
+				bad("network %q: traceroute is only available for nmap sources", n.Name)
+			}
 			switch s.Type {
 			case "router":
 				if !routers[s.Ref] {

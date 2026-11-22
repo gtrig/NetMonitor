@@ -24,7 +24,7 @@ type fakeSettings struct {
 }
 
 func (f *fakeSettings) Raw() *config.Config { c := *f.raw; return &c }
-func (f *fakeSettings) Save(c *config.Config) error {
+func (f *fakeSettings) Save(c *config.Config, _ map[string]string) error {
 	if f.saveErr != nil {
 		return f.saveErr
 	}

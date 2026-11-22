@@ -70,6 +70,7 @@
           ${s.type === "nmap" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: "-T4" })
             : select(`${p}.ref`, s.type === "router" ? "Router" : "SNMP target", s.ref || "", ["", ...refs], { empty: "choose…" })}
           ${text(`${p}.interval`, "Every", s.interval, { ph: "5m" })}
+          ${s.type === "nmap" ? check(`${p}.traceroute`, "Traceroute", s.traceroute) : ""}
           ${meta.can_edit ? `<button class="btn small danger" data-del-source="${i}" data-j="${j}" type="button" aria-label="Remove source">×</button>` : ""}
         </div>`;
       }).join("");
@@ -206,7 +207,10 @@
     else if (numFields.test(path)) v = v ? Number(v) : 0;
     else if ("secret" in el.dataset && v === "") v = getPath(path) === MASKED ? MASKED : getPath(path) || "";
     if (path.endsWith(".name")) cascadeRename(path, getPath(path), v);
-    if (path.endsWith(".type") && path.includes(".sources.")) setPath(path.replace(/type$/, "ref"), "");
+    if (path.endsWith(".type") && path.includes(".sources.")) {
+      setPath(path.replace(/type$/, "ref"), "");
+      if (v !== "nmap") setPath(path.replace(/type$/, "traceroute"), false);
+    }
     setPath(path, v);
     markDirty();
     if (el.dataset.restructure !== undefined || path.endsWith(".name")) renderKeepingFocus();

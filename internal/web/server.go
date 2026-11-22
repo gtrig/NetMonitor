@@ -47,7 +47,7 @@ type Runtime struct {
 // Settings reads and writes the raw config file.
 type Settings interface {
 	Raw() *config.Config
-	Save(raw *config.Config) error
+	Save(raw *config.Config, renames map[string]string) error
 	Reload() error
 	Path() string
 }
@@ -488,7 +488,8 @@ func (s *server) apiPutSettings(w http.ResponseWriter, r *http.Request) {
 		writeErrors(w, http.StatusBadRequest, fmt.Errorf("invalid request: %w", err))
 		return
 	}
-	if err := s.Settings.Save(settings.Apply(s.Settings.Raw(), in)); err != nil {
+	raw := s.Settings.Raw()
+	if err := s.Settings.Save(settings.Apply(raw, in), settings.NetworkRenames(raw, in)); err != nil {
 		writeErrors(w, http.StatusBadRequest, err)
 		return
 	}
