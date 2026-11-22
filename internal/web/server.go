@@ -11,7 +11,9 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -299,7 +301,7 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR})
 	}
 	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines,
-		Networks: nets, Compound: network == "" && len(nets) > 1})
+		Networks: nets, RouterAddrs: routerAddrs(rt.Config), Compound: network == "" && len(nets) > 1})
 	if els == nil {
 		els = []topology.Element{}
 	}
@@ -577,4 +579,19 @@ func (s *server) apiReloadSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// routerAddrs maps each configured router to the IP netmon reaches it at (host names are skipped).
+func routerAddrs(c *config.Config) map[string]netip.Addr {
+	out := map[string]netip.Addr{}
+	for _, r := range c.Routers {
+		host := r.Address
+		if h, _, err := net.SplitHostPort(r.Address); err == nil {
+			host = h
+		}
+		if ip, err := netip.ParseAddr(host); err == nil {
+			out[r.Name] = ip.Unmap()
+		}
+	}
+	return out
 }

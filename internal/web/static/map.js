@@ -42,9 +42,98 @@
     ],
   });
 
-  const layout = () => cy.layout({ name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70,
+  const cose = () => cy.layout({ name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70,
     nodeDimensionsIncludeLabels: true, randomize: true, nestingFactor: 0.8, gravity: 0.6, numIter: 2500,
     componentSpacing: 80 }).run();
+  const layout = () => (cy.nodes("[kind = 'net']").length ? boxLayout() : cose());
+
+  // boxLayout lays out the all-networks view deterministically: the network that ties the others
+  // together (the VPN) sits in the middle, each other network sits on its own side of it, routers
+  // inside the middle box face the network they serve, and each box holds its routers in the
+  // centre with hosts in rings around them.
+  function boxLayout() {
+    const isRouter = (n) => n.data("router") || n.data("kind") === "router";
+    const boxOf = (n) => (n.data("kind") === "net" ? n.id() : n.parent().length ? n.parent().id() : null);
+    const boxes = cy.nodes("[kind = 'net']").map((b) => b.id());
+    const tie = {};
+    cy.edges().forEach((e) => {
+      const a = boxOf(e.source()), b = boxOf(e.target());
+      if (!a || !b || a === b) return;
+      (tie[a] ??= {})[b] = (tie[a][b] || 0) + 1;
+      (tie[b] ??= {})[a] = (tie[b][a] || 0) + 1;
+    });
+    const score = (id) => [Object.keys(tie[id] || {}).length, Object.values(tie[id] || {}).reduce((x, y) => x + y, 0)];
+    const hub = boxes.slice().sort((a, b) => {
+      const [x1, y1] = score(a), [x2, y2] = score(b);
+      return x2 - x1 || y2 - y1 || a.localeCompare(b);
+    })[0];
+    const outer = boxes.filter((id) => id !== hub);
+    const angle = {};
+    outer.forEach((id, i) => { angle[id] = Math.PI + (2 * Math.PI * i) / outer.length; });
+
+    const place = (n, x, y) => n.position({ x, y });
+    // Routers in the centre, everything else in rings around them, centred on (0, 0).
+    const rings = (nodes) => {
+      const sorted = nodes.sort((a, b) => String(a.data("label")).localeCompare(String(b.data("label"))));
+      const routers = sorted.filter(isRouter), rest = sorted.filter((n) => !isRouter(n));
+      routers.forEach((n, i) => place(n, (i - (routers.length - 1) / 2) * 70, 0));
+      const base = routers.length > 1 ? routers.length * 35 : 0;
+      for (let i = 0, k = 1; i < rest.length; k++) {
+        const r = base + k * 75, m = Math.min(Math.max(1, Math.floor((2 * Math.PI * r) / 85)), rest.length - i);
+        for (let j = 0; j < m; j++) {
+          const a = (2 * Math.PI * j) / m - Math.PI / 2;
+          place(rest[i + j], r * Math.cos(a), r * Math.sin(a));
+        }
+        i += m;
+      }
+    };
+    const shift = (nodes, dx, dy) => nodes.forEach((n) => place(n, n.position("x") + dx, n.position("y") + dy));
+
+    // Middle box: routers facing an outer network go on that network's side.
+    const hubKids = cy.getElementById(hub).children();
+    const side = {}, middle = [];
+    hubKids.forEach((n) => {
+      const c = {};
+      n.connectedEdges().forEach((e) => {
+        const o = e.source().same(n) ? e.target() : e.source();
+        const b = boxOf(o);
+        if (b && b !== hub) c[b] = (c[b] || 0) + 1;
+      });
+      const best = Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b))[0];
+      best ? (side[best] ??= []).push(n) : middle.push(n);
+    });
+    rings(cy.collection(middle));
+    const r0 = (middle.length > 1 ? (75 * middle.length) / Math.PI : 0) + 160;
+    for (const [b, list] of Object.entries(side)) {
+      const a = angle[b] ?? 0, px = -Math.sin(a), py = Math.cos(a);
+      list.forEach((n, j) => {
+        const off = (j - (list.length - 1) / 2) * 70;
+        place(n, r0 * Math.cos(a) + px * off, r0 * Math.sin(a) + py * off);
+      });
+    }
+
+    const size = (nodes) => {
+      const bb = nodes.boundingBox({ includeLabels: true });
+      return nodes.length ? { w: bb.w + 40, h: bb.h + 40, cx: (bb.x1 + bb.x2) / 2, cy: (bb.y1 + bb.y2) / 2 } : { w: 80, h: 60, cx: 0, cy: 0 };
+    };
+    const hs = size(hubKids);
+    const gap = 140;
+    for (const id of outer) {
+      const kids = cy.getElementById(id).children();
+      rings(kids);
+      const os = size(kids), a = angle[id], c = Math.cos(a), s = Math.sin(a);
+      const d = Math.min(Math.abs(c) > 1e-6 ? ((hs.w + os.w) / 2 + gap) / Math.abs(c) : Infinity,
+        Math.abs(s) > 1e-6 ? ((hs.h + os.h) / 2 + gap) / Math.abs(s) : Infinity);
+      shift(kids, hs.cx + d * c - os.cx, hs.cy + d * s - os.cy);
+    }
+    // Anything outside the boxes (hops beyond the monitored networks) goes in a row underneath.
+    const loose = cy.nodes().filter((n) => n.data("kind") !== "net" && !n.parent().length);
+    if (loose.length) {
+      const bb = cy.nodes("[kind = 'net']").boundingBox();
+      loose.forEach((n, i) => place(n, bb.x1 + i * 90, bb.y2 + 80));
+    }
+    cy.fit(undefined, 30);
+  }
 
   async function load() {
     const q = netSel.value ? "?network=" + encodeURIComponent(netSel.value) : "";

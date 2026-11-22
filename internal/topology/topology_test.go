@@ -148,7 +148,10 @@ func TestHopResolvesToDevice(t *testing.T) {
 	if n["device:"+gw.Key]["router"] != true {
 		t.Fatalf("device not flagged as router: %v", n["device:"+gw.Key])
 	}
-	if _, ok := edges(els)["hop:10.0.10.1->device:"+gw.Key]; !ok {
+	e := edges(els)
+	_, fwd := e["hop:10.0.10.1->device:"+gw.Key]
+	_, back := e["device:"+gw.Key+"->hop:10.0.10.1"]
+	if !fwd && !back {
 		t.Fatalf("edges = %v", edges(els))
 	}
 }
@@ -190,8 +193,8 @@ func TestCompoundParentsAndMemberEdges(t *testing.T) {
 	if !toGT || !toVPN {
 		t.Fatalf("member edges = %v", e)
 	}
-	if _, ok := e["router:core->device:"+c.Key]; ok || n["router:core"] != nil {
-		t.Fatalf("gateway fallback used in compound mode: %v", e)
+	if _, ok := e["router:core->device:"+c.Key]; !ok || n["router:core"]["parent"] != "net:ATLan" {
+		t.Fatalf("unlinked host should hang off its network's router: %v", e)
 	}
 }
 
@@ -256,5 +259,65 @@ func TestMultiNetworkNodesGoIntoSharedNetwork(t *testing.T) {
 	// machine 3 shares no network with another multi-network node: stays outside the boxes.
 	if _, ok := n["machine:3"]["parent"]; ok {
 		t.Fatalf("machine 3 = %v", n["machine:3"])
+	}
+}
+
+// A configured router whose address belongs to a scanned device (or machine) is that node,
+// not a second one; its own ARP entry for that device does not become a self-loop.
+func TestConfiguredRouterMergesWithItsDevice(t *testing.T) {
+	devs := []model.Device{
+		deviceIn("ATLan", "ip:192.168.88.1", "192.168.88.1"),
+		deviceIn("ATLan", "mac:aa:00:00:00:00:02", "192.168.88.2"),
+		deviceIn("VPN", "ip:10.0.10.6", "10.0.10.6"),
+		deviceIn("ATLan", "mac:aa:00:00:00:00:10", "192.168.88.10"),
+	}
+	machines := map[model.MemberRef]int64{
+		{Network: "ATLan", Key: "ip:192.168.88.1"}:       1,
+		{Network: "ATLan", Key: "mac:aa:00:00:00:00:02"}: 1,
+		{Network: "VPN", Key: "ip:10.0.10.6"}:            1,
+	}
+	els := Build(Input{Devices: devs, Machines: machines, Compound: true,
+		Networks:    []NetInfo{{"ATLan", netip.MustParsePrefix("192.168.88.0/24")}, {"VPN", netip.MustParsePrefix("10.0.10.0/24")}},
+		Gateways:    map[string]string{"ATLan": "ATHome"},
+		RouterAddrs: map[string]netip.Addr{"ATHome": netip.MustParseAddr("192.168.88.1")},
+		Links: []model.Link{
+			{A: router("ATHome"), B: devRef("mac:aa:00:00:00:00:10")},
+			{A: router("ATHome"), B: devRef("mac:aa:00:00:00:00:02")},
+		}})
+	n, e := nodes(els), edges(els)
+	if n["router:ATHome"] != nil {
+		t.Fatalf("duplicate router node: %v", n["router:ATHome"])
+	}
+	if n["machine:1"]["router"] != true {
+		t.Fatalf("machine not marked router: %v", n["machine:1"])
+	}
+	if _, ok := e["machine:1->device:mac:aa:00:00:00:00:10"]; !ok {
+		t.Fatalf("edges = %v", e)
+	}
+	for k := range e {
+		if k == "machine:1->machine:1" {
+			t.Fatal("self loop")
+		}
+	}
+}
+
+// In the all-networks view, hosts with no link hang off the network's configured router too,
+// and a router node that matches no device sits in the box of the network it serves.
+func TestCompoundUnlinkedHostsAttachToConfiguredRouter(t *testing.T) {
+	devs := []model.Device{
+		deviceIn("ATLan", "mac:aa:00:00:00:00:10", "192.168.88.10"),
+		deviceIn("ATLan", "ip:192.168.88.126", "192.168.88.126"),
+		deviceIn("VPN", "ip:10.0.10.1", "10.0.10.1"),
+	}
+	els := Build(Input{Devices: devs, Compound: true,
+		Networks: []NetInfo{{"ATLan", netip.MustParsePrefix("192.168.88.0/24")}, {"VPN", netip.MustParsePrefix("10.0.10.0/24")}},
+		Gateways: map[string]string{"ATLan": "ATHome"},
+		Links:    []model.Link{{A: router("ATHome"), B: devRef("mac:aa:00:00:00:00:10")}}})
+	n, e := nodes(els), edges(els)
+	if _, ok := e["router:ATHome->device:ip:192.168.88.126"]; !ok {
+		t.Fatalf("unlinked host not attached: %v", e)
+	}
+	if n["router:ATHome"]["parent"] != "net:ATLan" {
+		t.Fatalf("router parent = %v", n["router:ATHome"]["parent"])
 	}
 }

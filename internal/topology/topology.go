@@ -31,6 +31,9 @@ type Input struct {
 	// Gateways maps a network to the router ID that devices without any link attach to
 	// (non-compound mode); without one a "network:<name>" node is used.
 	Gateways map[string]string
+	// RouterAddrs maps a configured router to the address netmon reaches it at. A router whose
+	// address belongs to a scanned device (or machine) is drawn as that node.
+	RouterAddrs map[string]netip.Addr
 	// Machines groups device rows into one node.
 	Machines map[model.MemberRef]int64
 	Networks []NetInfo
@@ -54,10 +57,6 @@ func (g *group) networks() []string {
 		}
 	}
 	return out
-}
-
-func isRouterID(id string) bool {
-	return strings.HasPrefix(id, "router:") || strings.HasPrefix(id, "hop:")
 }
 
 // Build returns nodes and edges for the input.
@@ -105,6 +104,12 @@ func Build(in Input) []Element {
 			if r.ID == "" {
 				return "", false
 			}
+			if addr, ok := in.RouterAddrs[r.ID]; ok {
+				if id, ok := ipNode[addr]; ok {
+					groups[id].router = true
+					return id, true
+				}
+			}
 			routers[r.ID] = true
 			return "router:" + r.ID, true
 		case "device":
@@ -125,6 +130,12 @@ func Build(in Input) []Element {
 	}
 
 	type edge struct{ a, b, label, kind string }
+	isRouterID := func(id string) bool {
+		if g := groups[id]; g != nil {
+			return g.router
+		}
+		return strings.HasPrefix(id, "router:") || strings.HasPrefix(id, "hop:")
+	}
 	resolved := make([][2]string, len(in.Links))
 	okLink := make([]bool, len(in.Links))
 	for i, l := range in.Links {
@@ -210,6 +221,14 @@ func Build(in Input) []Element {
 			}
 		}
 	}
+	// A network's configured router (Gateways) wins over the inferred one.
+	for _, n := range sortedKeys(in.Gateways) {
+		if name := in.Gateways[n]; name != "" {
+			if id, ok := resolve(model.NodeRef{Kind: "router", ID: name}); ok {
+				inferred[n] = id
+			}
+		}
+	}
 	linked := map[string]bool{}
 	for _, e := range edgesByPair {
 		linked[e.a], linked[e.b] = true, true
@@ -219,7 +238,7 @@ func Build(in Input) []Element {
 		if linked[id] || len(nets) != 1 {
 			continue
 		}
-		if gw := inferred[nets[0]]; gw != "" && gw != id && in.Gateways[nets[0]] == "" {
+		if gw := inferred[nets[0]]; gw != "" && gw != id {
 			edgesByPair[gw+"|"+id] = edge{a: gw, b: id, kind: "link"}
 			linked[id] = true
 		}
@@ -295,6 +314,18 @@ func Build(in Input) []Element {
 				}
 			}
 		}
+		// A router node that matches no device sits in the box of the one network it serves.
+		served := map[string][]string{}
+		for n, name := range in.Gateways {
+			if routers[name] {
+				served[name] = append(served[name], n)
+			}
+		}
+		for name, nets := range served {
+			if len(nets) == 1 {
+				parents["router:"+name] = "net:" + nets[0]
+			}
+		}
 		for id, ip := range hops {
 			if n := netOf(ip); n != "" {
 				parents[id] = "net:" + n
@@ -329,7 +360,7 @@ func Build(in Input) []Element {
 		return data
 	}
 	for _, id := range sortedKeys(routers) {
-		els = append(els, Element{Group: "nodes", Data: map[string]any{"id": "router:" + id, "kind": "router", "label": id}})
+		els = append(els, Element{Group: "nodes", Data: withParent("router:"+id, map[string]any{"id": "router:" + id, "kind": "router", "label": id})})
 	}
 	for _, id := range sortedKeys(hops) {
 		ip := hops[id]
