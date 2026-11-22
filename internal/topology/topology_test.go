@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 
@@ -219,5 +220,41 @@ func TestUnlinkedHostsAttachToInferredGateway(t *testing.T) {
 		if _, ok := e["machine:2->device:"+host.Key]; !ok {
 			t.Fatalf("compound=%v: host not attached to gateway: %v", compound, e)
 		}
+	}
+}
+
+// Routers that join their LANs over a shared network (the VPN) are drawn inside that network,
+// with a member edge to their own LAN.
+func TestMultiNetworkNodesGoIntoSharedNetwork(t *testing.T) {
+	gt := deviceIn("GTLan", "mac:aa:00:00:00:00:01", "192.168.8.1")
+	gtv := deviceIn("VPN", "ip:10.0.10.5", "10.0.10.5")
+	at := deviceIn("ATLan", "ip:192.168.88.1", "192.168.88.1")
+	atv := deviceIn("VPN", "ip:10.0.10.6", "10.0.10.6")
+	lone := deviceIn("GTLan", "mac:cc:00:00:00:00:03", "192.168.8.9")
+	lonev := deviceIn("ATLan", "ip:192.168.88.9", "192.168.88.9")
+	devs := []model.Device{gt, gtv, at, atv, lone, lonev}
+	for i := 20; i < 23; i++ { // ordinary hosts: LANs are not transit networks
+		devs = append(devs, deviceIn("GTLan", fmt.Sprintf("ip:192.168.8.%d", i), fmt.Sprintf("192.168.8.%d", i)),
+			deviceIn("ATLan", fmt.Sprintf("ip:192.168.88.%d", i), fmt.Sprintf("192.168.88.%d", i)))
+	}
+	els := Build(Input{Devices: devs, Networks: nets, Compound: true,
+		Machines: map[model.MemberRef]int64{
+			{Network: "GTLan", Key: gt.Key}: 1, {Network: "VPN", Key: gtv.Key}: 1,
+			{Network: "ATLan", Key: at.Key}: 2, {Network: "VPN", Key: atv.Key}: 2,
+			{Network: "GTLan", Key: lone.Key}: 3, {Network: "ATLan", Key: lonev.Key}: 3,
+		}})
+	n, e := nodes(els), edges(els)
+	if n["machine:1"]["parent"] != "net:VPN" || n["machine:2"]["parent"] != "net:VPN" {
+		t.Fatalf("routers not in VPN: %v / %v", n["machine:1"], n["machine:2"])
+	}
+	if _, ok := e["machine:1->net:VPN"]; ok {
+		t.Fatal("member edge to own parent box")
+	}
+	if _, ok := e["machine:1->net:GTLan"]; !ok {
+		t.Fatalf("lost member edge to own LAN: %v", e)
+	}
+	// machine 3 shares no network with another multi-network node: stays outside the boxes.
+	if _, ok := n["machine:3"]["parent"]; ok {
+		t.Fatalf("machine 3 = %v", n["machine:3"])
 	}
 }

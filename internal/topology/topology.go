@@ -248,14 +248,51 @@ func Build(in Input) []Element {
 			}
 			els = append(els, Element{Group: "nodes", Data: map[string]any{"id": "net:" + n, "kind": "net", "label": label, "network": n}})
 		}
+		// A transit network (a VPN, a backbone) is one where at least half the nodes are
+		// routers or sit in several networks. Nodes in several networks are drawn inside their
+		// transit network, with member edges to their other networks.
+		total, routerish := map[string]int{}, map[string]int{}
+		for _, id := range order {
+			nets := groups[id].networks()
+			for _, n := range nets {
+				total[n]++
+				if len(nets) > 1 || groups[id].router {
+					routerish[n]++
+				}
+			}
+		}
+		transit := func(n string) float64 {
+			if total[n] == 0 {
+				return 0
+			}
+			return float64(routerish[n]) / float64(total[n])
+		}
 		for _, id := range order {
 			nets := groups[id].networks()
 			if len(nets) == 1 {
 				parents[id] = "net:" + nets[0]
 				continue
 			}
+			best, tie := "", false
 			for _, n := range nets {
-				edgesByPair[id+"|net:"+n] = edge{a: id, b: "net:" + n, kind: "member"}
+				switch {
+				case transit(n) < 0.5:
+				case best == "" || transit(n) > transit(best):
+					best, tie = n, false
+				case transit(n) == transit(best):
+					tie = true
+				}
+			}
+			if tie { // ambiguous: keep it between the boxes
+				best = ""
+			}
+			if best != "" {
+				parents[id] = "net:" + best
+			}
+			for _, n := range nets {
+				if n != best {
+					edgesByPair[id+"|net:"+n] = edge{a: id, b: "net:" + n, kind: "member"}
+				}
 			}
 		}
 		for id, ip := range hops {
