@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · netmon</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="{{.Active}}">
+<header class="top">
+  <a class="brand" href="/"><span class="dot"></span>netmon</a>
+  <nav>
+    <a href="/" {{if eq .Active "dashboard"}}aria-current="page"{{end}}>Overview</a>
+    <a href="/map" {{if eq .Active "map"}}aria-current="page"{{end}}>Map</a>
+    <a href="/devices" {{if eq .Active "devices"}}aria-current="page"{{end}}>Devices</a>
+    <a href="/events" {{if eq .Active "events"}}aria-current="page"{{end}}>Events</a>
+  </nav>
+</header>
+<main class="{{.Active}}">
+{{template "content" .}}
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+{{block "scripts" .}}{{end}}
+</body>
+</html>

@@ -1,0 +1,52 @@
+{{define "content"}}
+<h1>Overview</h1>
+<section class="cards">
+{{range .Networks}}
+  <article class="card">
+    <div class="card-head">
+      <div><h2>{{.Name}}</h2><span class="muted mono">{{.CIDR}}</span></div>
+      <button class="btn" data-scan="{{.Name}}">Scan now</button>
+    </div>
+    <div class="stats">
+      <div><b>{{.Online}}</b><span>online</span></div>
+      <div><b>{{.Total}}</b><span>known devices</span></div>
+      <div class="{{if .Unknown}}warn{{end}}"><b>{{.Unknown}}</b><span>unreviewed</span></div>
+    </div>
+    <ul class="jobs">
+    {{range .Jobs}}
+      <li><span class="pill {{if .LastErr}}bad{{else if .LastOK.IsZero}}idle{{else}}ok{{end}}"></span>
+        <span class="mono">{{.Source}}</span> <span class="muted">every {{.Interval}} · last ok {{ago .LastOK}}</span>
+        {{if .LastErr}}<div class="err">{{.LastErr}}</div>{{end}}</li>
+    {{end}}
+    </ul>
+    <div class="card-links"><a href="/map?network={{.Name}}">Map →</a><a href="/devices?network={{.Name}}">Devices →</a></div>
+  </article>
+{{else}}
+  <p class="muted">No networks configured.</p>
+{{end}}
+</section>
+
+<section class="split">
+  <div>
+    <h2>Recent changes</h2>
+    <ul class="events">
+    {{range .Events}}
+      <li class="ev ev-{{.Type}}"><time title="{{ts .At}}">{{ago .At}}</time><span class="tag">{{.Network}}</span>{{.Message}}</li>
+    {{else}}
+      <li class="muted">Nothing yet. The first scan creates a baseline.</li>
+    {{end}}
+    </ul>
+    <a href="/events">All events →</a>
+  </div>
+  <div>
+    <h2>Notification channels</h2>
+    <ul class="channels">
+    {{range .Channels}}
+      <li><span class="mono">{{.Name}}</span> <span class="muted">{{.Type}}</span> <button class="btn small" data-test="{{.Name}}">Send test</button></li>
+    {{else}}
+      <li class="muted">No channels configured.</li>
+    {{end}}
+    </ul>
+  </div>
+</section>
+{{end}}

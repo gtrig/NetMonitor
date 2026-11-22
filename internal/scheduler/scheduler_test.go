@@ -145,3 +145,11 @@ func TestRunAndScanNow(t *testing.T) {
 		t.Fatal("Run did not return after cancel")
 	}
 }
+
+func TestHumanDuration(t *testing.T) {
+	for d, want := range map[time.Duration]string{10 * time.Minute: "10m", time.Hour: "1h", 90 * time.Second: "1m30s", 30 * time.Second: "30s"} {
+		if got := humanDuration(d); got != want {
+			t.Errorf("%v → %q want %q", d, got, want)
+		}
+	}
+}

@@ -1,0 +1,36 @@
+{{define "content"}}
+<div class="bar">
+  <h1>Devices</h1>
+  <form method="get" class="filters">
+    <select name="network" onchange="this.form.submit()">
+      <option value="">All networks</option>
+      {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+    <input type="search" id="q" placeholder="Filter by name, IP, MAC, vendor…" aria-label="Filter devices">
+    <label class="check"><input type="checkbox" id="onlyUnknown"> unreviewed only</label>
+  </form>
+</div>
+<div class="table-wrap">
+<table id="devices">
+  <thead><tr><th></th><th>Name</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Port</th><th>Network</th><th>Last seen</th><th>Sources</th><th>Known</th></tr></thead>
+  <tbody>
+  {{range .Devices}}
+  <tr data-key="{{.Key}}" data-known="{{.Known}}">
+    <td><span class="pill {{if .Online}}ok{{else}}idle{{end}}" title="{{if .Online}}online{{else}}offline{{end}}"></span></td>
+    <td><input class="label" value="{{.Label}}" placeholder="{{if .Hostname}}{{.Hostname}}{{else}}add a label{{end}}" aria-label="Label"></td>
+    <td class="mono">{{if .IP.IsValid}}{{.IP}}{{end}}</td>
+    <td class="mono">{{.MAC}}</td>
+    <td>{{.Vendor}}</td>
+    <td class="mono">{{.Port}}</td>
+    <td>{{.Network}}</td>
+    <td title="first seen {{ts .FirstSeen}}">{{ago .LastSeen}}</td>
+    <td class="muted small">{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
+    <td><input type="checkbox" class="known" {{if .Known}}checked{{end}} aria-label="Mark as known"></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="10" class="muted">No devices yet.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}

@@ -1,0 +1,19 @@
+{{define "content"}}
+<div class="bar">
+  <h1>Events</h1>
+  <form method="get" class="filters">
+    <select name="network" onchange="this.form.submit()">
+      <option value="">All networks</option>
+      {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </form>
+</div>
+<ul class="events full">
+{{range .Events}}
+  <li class="ev ev-{{.Type}}"><time title="{{ago .At}}">{{ts .At}}</time><span class="tag">{{.Network}}</span><span class="type">{{.Type}}</span>{{.Message}}</li>
+{{else}}
+  <li class="muted">No events.</li>
+{{end}}
+</ul>
+{{if .Older}}<a class="btn" href="/events?before={{.Older}}{{if .Network}}&network={{.Network}}{{end}}">Older →</a>{{end}}
+{{end}}

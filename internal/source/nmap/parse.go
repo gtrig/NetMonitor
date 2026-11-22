@@ -13,7 +13,9 @@ type xmlRun struct {
 }
 
 type xmlHost struct {
-	Status    struct{ State string `xml:"state,attr"` } `xml:"status"`
+	Status struct {
+		State string `xml:"state,attr"`
+	} `xml:"status"`
 	Addresses []struct {
 		Addr     string `xml:"addr,attr"`
 		AddrType string `xml:"addrtype,attr"`

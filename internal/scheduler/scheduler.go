@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +67,7 @@ func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver,
 		netLock: map[string]*sync.Mutex{}}
 	for _, j := range jobs {
 		s.trigger = append(s.trigger, make(chan struct{}, 1))
-		s.status = append(s.status, JobStatus{Network: j.Network.Name, Source: j.Source.Name(), Interval: j.Interval.String()})
+		s.status = append(s.status, JobStatus{Network: j.Network.Name, Source: j.Source.Name(), Interval: humanDuration(j.Interval)})
 		if s.netLock[j.Network.Name] == nil {
 			s.netLock[j.Network.Name] = &sync.Mutex{}
 		}
@@ -231,4 +232,16 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
 		s.sink.Enqueue(events)
 	}
 	return nil
+}
+
+// humanDuration formats d without trailing zero units ("10m" instead of "10m0s").
+func humanDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
 }

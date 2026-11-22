@@ -7,7 +7,7 @@ import (
 	"github.com/gtrig/netmon/internal/model"
 )
 
-func router(id string) model.NodeRef { return model.NodeRef{Kind: "router", ID: id} }
+func router(id string) model.NodeRef  { return model.NodeRef{Kind: "router", ID: id} }
 func devRef(key string) model.NodeRef { return model.NodeRef{Kind: "device", ID: key} }
 
 func device(key, ip string) model.Device {

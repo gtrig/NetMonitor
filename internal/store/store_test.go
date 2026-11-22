@@ -132,3 +132,20 @@ func TestReopenKeepsData(t *testing.T) {
 		t.Fatalf("got %d devices", len(got))
 	}
 }
+
+func TestDevicesSortedByIP(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	var devs []model.Device
+	for _, a := range []string{"10.0.0.110", "10.0.0.2", "10.0.0.20"} {
+		d := sampleDevice()
+		d.IP = netip.MustParseAddr(a)
+		d.Key = "ip:" + a
+		devs = append(devs, d)
+	}
+	s.UpsertDevices(ctx, devs)
+	got, _ := s.Devices(ctx, "lan")
+	if got[0].IP.String() != "10.0.0.2" || got[1].IP.String() != "10.0.0.20" || got[2].IP.String() != "10.0.0.110" {
+		t.Fatalf("order = %v %v %v", got[0].IP, got[1].IP, got[2].IP)
+	}
+}

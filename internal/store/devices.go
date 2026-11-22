@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +41,12 @@ func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, er
 		}
 		out = append(out, d)
 	}
+	slices.SortStableFunc(out, func(a, b model.Device) int {
+		if c := strings.Compare(a.Network, b.Network); c != 0 {
+			return c
+		}
+		return a.IP.Compare(b.IP)
+	})
 	return out, rows.Err()
 }
 
