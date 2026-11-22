@@ -278,7 +278,9 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	links, err := s.Store.Links(r.Context(), network)
+	// All links, even for one network: hops recorded by other networks' traceroutes show the
+	// way out and mark which device is this network's gateway.
+	links, err := s.Store.Links(r.Context(), "")
 	if err != nil {
 		serverError(w, err)
 		return

@@ -197,6 +197,34 @@ func Build(in Input) []Element {
 		return ""
 	}
 
+	// A router node with an address inside a network is that network's gateway: hosts there with
+	// no link of their own (one-hop traces on netmon's own LAN, nmap without traceroute) hang off it.
+	inferred := map[string]string{}
+	for _, id := range order {
+		if !groups[id].router {
+			continue
+		}
+		for _, d := range groups[id].members {
+			if n := netOf(d.IP); d.IP.IsValid() && n != "" && inferred[n] == "" {
+				inferred[n] = id
+			}
+		}
+	}
+	linked := map[string]bool{}
+	for _, e := range edgesByPair {
+		linked[e.a], linked[e.b] = true, true
+	}
+	for _, id := range order {
+		nets := groups[id].networks()
+		if linked[id] || len(nets) != 1 {
+			continue
+		}
+		if gw := inferred[nets[0]]; gw != "" && gw != id && in.Gateways[nets[0]] == "" {
+			edgesByPair[gw+"|"+id] = edge{a: gw, b: id, kind: "link"}
+			linked[id] = true
+		}
+	}
+
 	var els []Element
 	parents := map[string]string{} // node → parent box
 	if in.Compound {
@@ -236,10 +264,6 @@ func Build(in Input) []Element {
 			}
 		}
 	} else {
-		linked := map[string]bool{}
-		for _, e := range edgesByPair {
-			linked[e.a], linked[e.b] = true, true
-		}
 		fallback := map[string]bool{}
 		for _, id := range order {
 			if linked[id] {

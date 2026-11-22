@@ -203,3 +203,21 @@ func TestSameKeyAcrossNetworksSharesNode(t *testing.T) {
 		t.Fatalf("node = %v", d)
 	}
 }
+
+// Hosts on netmon's own LAN have one-hop traces (no router in them): they attach to the router
+// node that has an address in their network.
+func TestUnlinkedHostsAttachToInferredGateway(t *testing.T) {
+	gwLAN := deviceIn("GTLan", "mac:aa:00:00:00:00:01", "192.168.8.1")
+	gwVPN := deviceIn("VPN", "ip:10.0.10.5", "10.0.10.5")
+	host := deviceIn("GTLan", "mac:bb:00:00:00:00:02", "192.168.8.50")
+	in := Input{Devices: []model.Device{gwLAN, gwVPN, host}, Networks: nets, Compound: true,
+		Machines: map[model.MemberRef]int64{{Network: "GTLan", Key: gwLAN.Key}: 2, {Network: "VPN", Key: gwVPN.Key}: 2},
+		Links:    []model.Link{{A: router("192.168.8.1"), B: router("10.0.10.1")}}}
+	for _, compound := range []bool{true, false} {
+		in.Compound = compound
+		e := edges(Build(in))
+		if _, ok := e["machine:2->device:"+host.Key]; !ok {
+			t.Fatalf("compound=%v: host not attached to gateway: %v", compound, e)
+		}
+	}
+}
