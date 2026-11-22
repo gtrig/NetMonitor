@@ -1,0 +1,5 @@
+/data/
+.env
+config/config.yaml
+/netmon
+.superpowers/

@@ -1,0 +1,58 @@
+# netmon configuration. ${VAR} references are expanded from the environment (.env).
+listen: 0.0.0.0:8080        # NETMON_LISTEN overrides
+# data_dir: /data           # NETMON_DATA_DIR overrides
+# auth:                     # optional HTTP basic auth for the web UI
+#   username: admin
+#   password: ${NETMON_UI_PASSWORD}
+
+routers:
+  - name: core
+    type: mikrotik
+    address: 192.168.88.1:8729      # api-ssl; use :8728 with tls: false for plain API
+    tls: true
+    insecure_skip_verify: true      # RouterOS self-signed certificate
+    username: netmon-ro
+    password: ${CORE_PASS}
+
+snmp_targets:
+  - name: core-snmp
+    address: 192.168.88.1
+    version: v2c
+    community: ${SNMP_COMMUNITY}
+
+networks:
+  - name: lan
+    cidr: 192.168.88.0/24
+    # exclude: [192.168.88.254]
+    # offline_after: 15m            # default: 3x the smallest source interval
+    sources:
+      - {type: router, ref: core, interval: 1m}
+      - {type: snmp, ref: core-snmp, interval: 5m}
+      - {type: nmap, interval: 15m}
+
+channels:
+  - name: telegram
+    type: telegram
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
+  - name: discord
+    type: discord
+    webhook_url: ${DISCORD_WEBHOOK_URL}
+  - name: email
+    type: email
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    starttls: true
+    username: netmon@example.com
+    password: ${SMTP_PASSWORD}
+    from: netmon@example.com
+    to: [me@example.com]
+
+rules:
+  # New devices you have not marked as known.
+  - events: [device_new, baseline]
+    only_unknown: true
+    channels: [telegram]
+  # Anything suspicious goes everywhere.
+  - events: [mac_changed_for_ip]
+    channels: [telegram, discord, email]
