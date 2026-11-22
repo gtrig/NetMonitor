@@ -3,7 +3,7 @@ module github.com/gtrig/netmon
 go 1.26.8
 
 require (
-	go.yaml.in/yaml/v3 v3.0.4
+	go.yaml.in/yaml/v3 v3.0.5
 	modernc.org/sqlite v1.62.0
 )
 
@@ -11,6 +11,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/go-routeros/routeros/v3 v3.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gosnmp/gosnmp v1.47.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
