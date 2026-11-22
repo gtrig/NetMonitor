@@ -62,7 +62,7 @@ func DefaultExec(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	// Without a terminal on stdin nmap prints no progress; scanning still works without one.
 	if master, slave, perr := openPTY(); perr == nil {
-		cmd.Stdin = slave
+		attachPTY(cmd, slave)
 		defer master.Close()
 		defer slave.Close()
 	}

@@ -3,6 +3,7 @@ package nmap
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"syscall"
 	"unsafe"
 )
@@ -30,4 +31,10 @@ func openPTY() (master, slave *os.File, err error) {
 		return nil, nil, err
 	}
 	return master, slave, nil
+}
+
+// attachPTY makes slave the child's stdin and controlling terminal (nmap reads /dev/tty).
+func attachPTY(cmd *exec.Cmd, slave *os.File) {
+	cmd.Stdin = slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 }
