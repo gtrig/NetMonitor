@@ -55,7 +55,9 @@ func newTest(t *testing.T, auth *config.BasicAuth) (http.Handler, *store.Store, 
 	cfg := &config.Config{Auth: auth, Networks: []config.Network{{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")}},
 		Channels: []config.Channel{{Name: "tg", Type: "telegram"}}}
 	fs := &fakeSched{}
-	return New(Deps{Store: st, Scheduler: fs, Notifier: fakeNotifier{}, Config: cfg}), st, fs
+	return New(Deps{Store: st, Runtime: func() Runtime {
+		return Runtime{Scheduler: fs, Notifier: fakeNotifier{}, Config: cfg}
+	}, Settings: &fakeSettings{raw: &config.Config{}}}), st, fs
 }
 
 func do(h http.Handler, method, path, body string, auth bool) *httptest.ResponseRecorder {

@@ -7,17 +7,20 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
 	"github.com/gtrig/netmon/internal/notify"
 	"github.com/gtrig/netmon/internal/scheduler"
+	"github.com/gtrig/netmon/internal/settings"
 	"github.com/gtrig/netmon/internal/store"
 	"github.com/gtrig/netmon/internal/topology"
 )
@@ -28,9 +31,8 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
-// Deps are the server's collaborators.
-type Deps struct {
-	Store     *store.Store
+// Runtime is the currently running configuration and components; it changes on hot reload.
+type Runtime struct {
 	Scheduler interface {
 		ScanNow(network string) error
 		Status() []scheduler.JobStatus
@@ -38,14 +40,31 @@ type Deps struct {
 	Notifier interface {
 		Test(ctx context.Context, channel string) error
 	}
-	Config   *config.Config
+	Config   *config.Config    // effective config
 	Gateways map[string]string // network → router ID for unlinked devices
+}
+
+// Settings reads and writes the raw config file.
+type Settings interface {
+	Raw() *config.Config
+	Save(raw *config.Config) error
+	Reload() error
+	Path() string
+}
+
+// Deps are the server's collaborators.
+type Deps struct {
+	Store    *store.Store
+	Runtime  func() Runtime
+	Settings Settings
 }
 
 type server struct {
 	Deps
 	pages map[string]*template.Template
 }
+
+func (s *server) rt() Runtime { return s.Runtime() }
 
 var funcs = template.FuncMap{
 	"ago": func(t time.Time) string {
@@ -69,7 +88,7 @@ var funcs = template.FuncMap{
 // New returns the HTTP handler.
 func New(d Deps) http.Handler {
 	s := &server{Deps: d, pages: map[string]*template.Template{}}
-	for _, p := range []string{"dashboard", "map", "devices", "events"} {
+	for _, p := range []string{"dashboard", "map", "devices", "events", "settings"} {
 		s.pages[p] = template.Must(template.New("layout.html").Funcs(funcs).
 			ParseFS(templateFS, "templates/layout.html", "templates/"+p+".html"))
 	}
@@ -88,6 +107,10 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("PATCH /api/devices/{key}", s.apiPatchDevice)
 	mux.HandleFunc("POST /api/scan/{network}", s.apiScan)
 	mux.HandleFunc("POST /api/notify/test/{channel}", s.apiNotifyTest)
+	mux.HandleFunc("GET /settings", s.page("settings", "Settings"))
+	mux.HandleFunc("GET /api/settings", s.apiGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.apiPutSettings)
+	mux.HandleFunc("POST /api/settings/reload", s.apiReloadSettings)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthz", s.healthz)
@@ -106,11 +129,12 @@ func securityHeaders(h http.Handler) http.Handler {
 }
 
 func (s *server) auth(h http.Handler) http.Handler {
-	a := s.Config.Auth
-	if a == nil {
-		return h
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a := s.rt().Config.Auth // read per request: auth may change on reload
+		if a == nil {
+			h.ServeHTTP(w, r)
+			return
+		}
 		u, p, ok := r.BasicAuth()
 		userOK := subtle.ConstantTimeCompare([]byte(u), []byte(a.Username)) == 1
 		passOK := subtle.ConstantTimeCompare([]byte(p), []byte(a.Password)) == 1
@@ -198,9 +222,10 @@ func (s *server) networks(ctx context.Context) ([]networkSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	status := s.Scheduler.Status()
+	rt := s.rt()
+	status := rt.Scheduler.Status()
 	var out []networkSummary
-	for _, n := range s.Config.Networks {
+	for _, n := range rt.Config.Networks {
 		ns := networkSummary{Name: n.Name, CIDR: n.CIDR.String(), Jobs: []scheduler.JobStatus{}}
 		for _, d := range devs {
 			if d.Network != n.Name {
@@ -248,7 +273,7 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	els := topology.Build(devs, links, s.Gateways)
+	els := topology.Build(devs, links, s.rt().Gateways)
 	if els == nil {
 		els = []topology.Element{}
 	}
@@ -319,7 +344,7 @@ func (s *server) apiPatchDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiScan(w http.ResponseWriter, r *http.Request) {
-	err := s.Scheduler.ScanNow(r.PathValue("network"))
+	err := s.rt().Scheduler.ScanNow(r.PathValue("network"))
 	switch {
 	case errors.Is(err, scheduler.ErrUnknownNetwork):
 		http.Error(w, "unknown network", http.StatusNotFound)
@@ -331,7 +356,7 @@ func (s *server) apiScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiNotifyTest(w http.ResponseWriter, r *http.Request) {
-	err := s.Notifier.Test(r.Context(), r.PathValue("channel"))
+	err := s.rt().Notifier.Test(r.Context(), r.PathValue("channel"))
 	switch {
 	case errors.Is(err, notify.ErrUnknownChannel):
 		http.Error(w, "unknown channel", http.StatusNotFound)
@@ -385,7 +410,7 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	s.render(w, "dashboard", pageData{Title: "Overview", Networks: nets, Events: evs, Channels: s.Config.Channels})
+	s.render(w, "dashboard", pageData{Title: "Overview", Networks: nets, Events: evs, Channels: s.rt().Config.Channels})
 }
 
 func (s *server) devicesPage(w http.ResponseWriter, r *http.Request) {
@@ -420,4 +445,60 @@ func (s *server) eventsPage(w http.ResponseWriter, r *http.Request) {
 		older = evs[len(evs)-1].ID
 	}
 	s.render(w, "events", pageData{Title: "Events", Networks: nets, Events: evs, Network: f.Network, Older: older})
+}
+
+// ---- settings ----
+
+type settingsResponse struct {
+	settings.Editable
+	CanEdit    bool     `json:"can_edit"`
+	Path       string   `json:"path"`
+	EventTypes []string `json:"event_types"`
+}
+
+func (s *server) canEdit() bool { return s.rt().Config.Auth != nil }
+
+func (s *server) apiGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, settingsResponse{Editable: settings.Mask(s.Settings.Raw()), CanEdit: s.canEdit(),
+		Path: s.Settings.Path(), EventTypes: model.EventTypes})
+}
+
+func writeErrors(w http.ResponseWriter, code int, err error) {
+	var lines []string
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]any{"errors": lines})
+}
+
+func (s *server) apiPutSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.canEdit() {
+		http.Error(w, "settings are read-only until auth is configured", http.StatusForbidden)
+		return
+	}
+	var in settings.Editable
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil {
+		writeErrors(w, http.StatusBadRequest, fmt.Errorf("invalid request: %w", err))
+		return
+	}
+	if err := s.Settings.Save(settings.Apply(s.Settings.Raw(), in)); err != nil {
+		writeErrors(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) apiReloadSettings(w http.ResponseWriter, r *http.Request) {
+	if err := s.Settings.Reload(); err != nil {
+		writeErrors(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -234,14 +233,4 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
 	return nil
 }
 
-// humanDuration formats d without trailing zero units ("10m" instead of "10m0s").
-func humanDuration(d time.Duration) string {
-	s := d.String()
-	if strings.HasSuffix(s, "m0s") {
-		s = strings.TrimSuffix(s, "0s")
-	}
-	if strings.HasSuffix(s, "h0m") {
-		s = strings.TrimSuffix(s, "0m")
-	}
-	return s
-}
+func humanDuration(d time.Duration) string { return config.FormatDuration(d) }

@@ -1,0 +1,16 @@
+{{define "content"}}
+<div class="bar">
+  <h1>Settings</h1>
+  <span class="muted mono small" id="cfgpath"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="reload" type="button">Reload from file</button>
+  <button class="btn primary" id="save" type="button" disabled>Save</button>
+</div>
+<div id="banner" class="banner" hidden>
+  Settings are read-only because the web UI has no password. Add an <code>auth:</code> block
+  (username and password) to <code>config.yaml</code> and restart to edit here.
+</div>
+<div id="errors" class="banner bad" hidden role="alert"></div>
+<div id="settings" class="settings"><p class="muted">Loading…</p></div>
+{{end}}
+{{define "scripts"}}<script src="/static/settings.js"></script>{{end}}

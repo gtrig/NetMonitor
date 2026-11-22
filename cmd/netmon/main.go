@@ -14,14 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gtrig/netmon/internal/app"
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/enrich"
-	"github.com/gtrig/netmon/internal/notify"
-	"github.com/gtrig/netmon/internal/scheduler"
-	"github.com/gtrig/netmon/internal/source"
-	"github.com/gtrig/netmon/internal/source/mikrotik"
-	"github.com/gtrig/netmon/internal/source/nmap"
-	"github.com/gtrig/netmon/internal/source/snmp"
 	"github.com/gtrig/netmon/internal/store"
 	"github.com/gtrig/netmon/internal/web"
 )
@@ -69,91 +64,48 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	notifiers, err := notify.FromConfig(cfg.Channels)
+	a, err := app.New(ctx, *cfgPath, app.Options{Store: st, OUI: oui, Resolver: resolver})
 	if err != nil {
 		return err
 	}
-	dispatcher := notify.NewDispatcher(cfg.Rules, notifiers, func(key string) bool { return st.IsKnown(context.Background(), key) })
-	dispatcher.Start(ctx)
+	defer a.Close()
 
-	jobs, gateways := buildJobs(cfg)
-	sched := scheduler.New(st, dispatcher, oui, resolver, jobs)
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	go func() {
+		for range hup {
+			if err := a.Reload(); err != nil {
+				slog.Error("reload failed; keeping current configuration", "err", err)
+			}
+		}
+	}()
 
+	runtime := func() web.Runtime {
+		rt := a.Current()
+		return web.Runtime{Scheduler: rt.Scheduler, Notifier: rt.Dispatcher, Config: rt.Config, Gateways: rt.Gateways}
+	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           web.New(web.Deps{Store: st, Scheduler: sched, Notifier: dispatcher, Config: cfg, Gateways: gateways}),
+		Handler:           web.New(web.Deps{Store: st, Runtime: runtime, Settings: a}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	httpErr := make(chan error, 1)
 	go func() {
-		slog.Info("netmon listening", "addr", cfg.Listen, "networks", len(cfg.Networks), "jobs", len(jobs))
+		slog.Info("netmon listening", "addr", cfg.Listen, "config", *cfgPath, "networks", len(cfg.Networks))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			httpErr <- err
 		}
 		close(httpErr)
 	}()
-	schedDone := make(chan struct{})
-	go func() { sched.Run(ctx); close(schedDone) }()
 
 	select {
 	case <-ctx.Done():
 	case err := <-httpErr:
-		stop()
-		<-schedDone
 		return err
 	}
 	slog.Info("shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	srv.Shutdown(shutCtx)
-	<-schedDone
-	return nil
-}
-
-// buildJobs creates one job per configured source and the per-network gateway router.
-func buildJobs(cfg *config.Config) ([]scheduler.Job, map[string]string) {
-	// Map router management addresses to configured names so neighbors and SNMP views of
-	// the same router land on one map node, even when identities collide.
-	byAddr := map[string]string{}
-	for _, r := range cfg.Routers {
-		host, _, err := net.SplitHostPort(r.Address)
-		if err != nil {
-			host = r.Address
-		}
-		byAddr[host] = r.Name
-	}
-	resolve := func(address, identity string) string {
-		if name, ok := byAddr[address]; ok {
-			return name
-		}
-		return identity
-	}
-	routers := map[string]*mikrotik.Source{}
-	for _, r := range cfg.Routers {
-		routers[r.Name] = mikrotik.New(r, resolve)
-	}
-	targets := map[string]*snmp.Source{}
-	for _, t := range cfg.SNMPTargets {
-		targets[t.Name] = snmp.New(t, resolve)
-	}
-	var jobs []scheduler.Job
-	gateways := map[string]string{}
-	for _, n := range cfg.Networks {
-		for _, ref := range n.Sources {
-			var src source.Source
-			switch ref.Type {
-			case "router":
-				src = routers[ref.Ref]
-				if gateways[n.Name] == "" {
-					gateways[n.Name] = ref.Ref
-				}
-			case "snmp":
-				src = targets[ref.Ref]
-			case "nmap":
-				src = nmap.New(ref.Args, nil)
-			}
-			jobs = append(jobs, scheduler.Job{Network: n, Source: src, Interval: ref.Interval.Duration, OfflineAfter: n.OfflineAfterFor(ref)})
-		}
-	}
-	return jobs, gateways
+	return nil // deferred a.Close waits for in-flight collections
 }

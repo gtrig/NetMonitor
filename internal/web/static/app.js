@@ -8,8 +8,12 @@ function toast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2500);
 }
 
+// Absolute same-origin URL: fetch() rejects relative URLs when the page URL carries
+// credentials (http://user:pass@host/...).
+const url = (path) => new URL(path, location.origin).href;
+
 async function api(method, path, body) {
-  const res = await fetch(path, {
+  const res = await fetch(url(path), {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,

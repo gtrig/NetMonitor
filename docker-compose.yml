@@ -4,6 +4,7 @@ services:
     image: netmon:latest
     container_name: netmon
     restart: unless-stopped
+    user: "${NETMON_UID:-1000}:${NETMON_GID:-1000}"  # owner of ./config, so the settings page can save
     network_mode: host          # needed for nmap ARP discovery on the LAN
     cap_add: [NET_RAW, NET_ADMIN]
     env_file: .env              # router/SNMP passwords, bot tokens, SMTP creds
@@ -11,7 +12,7 @@ services:
       NETMON_CONFIG: /config/config.yaml
       NETMON_LISTEN: 0.0.0.0:8080
     volumes:
-      - ./config:/config:ro     # config.yaml
+      - ./config:/config        # config.yaml (written by the settings page)
       - netmon-data:/data       # SQLite DB
 
 volumes:

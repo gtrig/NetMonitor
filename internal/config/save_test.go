@@ -1,10 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const rawYAML = `
@@ -72,7 +74,7 @@ func TestSaveRoundTripIsMinimal(t *testing.T) {
 	}
 	data, _ := os.ReadFile(p)
 	s := string(data)
-	for _, want := range []string{"${CORE_PASS}", "192.168.20.0/24", "interval: 1m0s"} {
+	for _, want := range []string{"${CORE_PASS}", "192.168.20.0/24", "interval: 1m\n"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("saved file lacks %q:\n%s", want, s)
 		}
@@ -88,5 +90,17 @@ func TestSaveRoundTripIsMinimal(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Dir(p)); len(entries) != 1 {
 		t.Fatalf("temp files left behind: %v", entries)
+	}
+}
+
+func TestDurationsSavedCompactly(t *testing.T) {
+	for d, want := range map[time.Duration]string{30 * time.Minute: "30m", time.Hour: "1h", 90 * time.Second: "1m30s", 45 * time.Second: "45s", 2*time.Hour + 30*time.Minute: "2h30m"} {
+		if got := FormatDuration(d); got != want {
+			t.Errorf("%v → %q want %q", d, got, want)
+		}
+	}
+	b, _ := json.Marshal(Duration{30 * time.Minute})
+	if string(b) != `"30m"` {
+		t.Errorf("json = %s", b)
 	}
 }

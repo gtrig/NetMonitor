@@ -13,7 +13,7 @@
         "label": "data(label)", "font-size": 10, "color": v("--text"), "text-valign": "bottom", "text-margin-y": 4,
         "background-color": v("--ok"), "width": 18, "height": 18, "border-width": 2, "border-color": v("--surface"),
         "text-background-color": v("--surface"), "text-background-opacity": 0.8, "text-background-padding": 2 } },
-      { selector: "node[kind = 'device'][known = false]", style: { "background-color": v("--warn") } },
+      { selector: "node[kind = 'device'][!known]", style: { "background-color": v("--warn") } },
       { selector: "node[status = 'offline']", style: { "background-color": v("--idle"), "opacity": 0.7 } },
       { selector: "node[kind = 'router']", style: {
         "shape": "round-rectangle", "width": 34, "height": 24, "background-color": v("--router"),

@@ -17,13 +17,27 @@ Detected changes: `device_new`, `device_offline`, `device_back_online`, `ip_chan
 ```bash
 cp .env.example .env
 cp config/config.example.yaml config/config.yaml
-# edit config/config.yaml (networks, routers, channels) and .env (secrets)
+# set NETMON_UID/NETMON_GID in .env to the owner of ./config (id -u; id -g),
+# add an auth: block to config/config.yaml, then edit the rest here or on the Settings page
 docker compose up -d
 ```
 
 Open `http://<host>:8080`. Data (SQLite) lives in the `netmon-data` volume and survives restarts and upgrades (`docker compose up -d --build`).
 
 The container uses `network_mode: host` and the `NET_RAW`/`NET_ADMIN` capabilities so nmap can do ARP discovery on your LAN. The web UI has no authentication by default: set `auth:` in the config if the host is reachable by others.
+
+## Settings page
+
+Networks, routers, SNMP targets, notification channels and rules can be managed on the **Settings** page. Saving writes `config/config.yaml` and applies the change immediately (no restart); devices and history are kept.
+
+- **Editing requires `auth:`** in the config (otherwise the page is read-only), since settings control where alerts go.
+- `listen`, `data_dir` and `auth` are only changed in the file (restart to apply), so a UI change can't lock you out.
+- **Secrets** are never sent to the browser. A field shows whether it is set or reads from `.env` (`${NAME}`). Leave it empty to keep the current value; type `${NAME}` to keep a secret in `.env`, or type the value itself to store it in the file.
+- Invalid changes are rejected with every problem listed, and nothing is written.
+- Hand edits to the file are fine: use **Reload from file**, or `docker compose kill -s HUP netmon`. An invalid file is reported and the running configuration is kept.
+- Saving from the page rewrites the file, so comments in it are lost.
+
+The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_GID` in `.env`, default 1000) so it can write the file.
 
 ## Configuration
 
