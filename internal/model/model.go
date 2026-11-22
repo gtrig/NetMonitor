@@ -55,6 +55,9 @@ type Device struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	Sources   []string
+	// PrevKey is set (not stored) when the device's key changed in this update,
+	// e.g. an IP-only device whose MAC became known; the store renames the row.
+	PrevKey string
 }
 
 // Event is a detected change.

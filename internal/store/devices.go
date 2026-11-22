@@ -69,6 +69,16 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 	}
 	defer stmt.Close()
 	for _, d := range devs {
+		if d.PrevKey != "" && d.PrevKey != d.Key {
+			// Rename keeps label/known; if the new key already exists, drop the old row instead.
+			if _, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE network = ? AND key = ?
+				AND EXISTS (SELECT 1 FROM devices WHERE network = ? AND key = ?)`, d.Network, d.PrevKey, d.Network, d.Key); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE devices SET key = ? WHERE network = ? AND key = ?`, d.Key, d.Network, d.PrevKey); err != nil {
+				return err
+			}
+		}
 		ip := ""
 		if d.IP.IsValid() {
 			ip = d.IP.String()

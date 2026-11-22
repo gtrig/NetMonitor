@@ -67,6 +67,19 @@ func Apply(known []model.Device, obs model.Observations, firstEver bool) ([]mode
 				}
 			}
 		}
+		if !ok && h.MAC != "" && h.IP.IsValid() {
+			// An IP-only device at this IP now has a known MAC: upgrade its identity.
+			for _, i := range byIP[h.IP] {
+				if devs[i].MAC == "" {
+					idx, ok = i, true
+					devs[i].PrevKey = devs[i].Key
+					devs[i].Key = key
+					devs[i].MAC = h.MAC
+					byKey[key] = i
+					break
+				}
+			}
+		}
 		if !ok {
 			d := model.Device{Key: key, Network: obs.Network, MAC: h.MAC, IP: h.IP, Hostname: h.Hostname,
 				Vendor: h.Vendor, Port: h.Port, Online: true, FirstSeen: at, LastSeen: at, Sources: []string{sourceOf(h, obs)}}

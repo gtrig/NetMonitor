@@ -1,0 +1,18 @@
+services:
+  netmon:
+    build: .
+    image: netmon:latest
+    container_name: netmon
+    restart: unless-stopped
+    network_mode: host          # needed for nmap ARP discovery on the LAN
+    cap_add: [NET_RAW, NET_ADMIN]
+    env_file: .env              # router/SNMP passwords, bot tokens, SMTP creds
+    environment:
+      NETMON_CONFIG: /config/config.yaml
+      NETMON_LISTEN: 0.0.0.0:8080
+    volumes:
+      - ./config:/config:ro     # config.yaml
+      - netmon-data:/data       # SQLite DB
+
+volumes:
+  netmon-data:

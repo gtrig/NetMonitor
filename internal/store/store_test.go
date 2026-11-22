@@ -149,3 +149,21 @@ func TestDevicesSortedByIP(t *testing.T) {
 		t.Fatalf("order = %v %v %v", got[0].IP, got[1].IP, got[2].IP)
 	}
 }
+
+func TestUpsertWithPrevKeyRenamesAndKeepsMeta(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	d := sampleDevice()
+	d.Key, d.MAC = "ip:10.0.0.5", ""
+	s.UpsertDevices(ctx, []model.Device{d})
+	label, known := "My NAS", true
+	s.SetDeviceMeta(ctx, "ip:10.0.0.5", &label, &known)
+	d.PrevKey, d.Key, d.MAC = "ip:10.0.0.5", "mac:aa:bb:cc:00:11:22", "aa:bb:cc:00:11:22"
+	if err := s.UpsertDevices(ctx, []model.Device{d}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Devices(ctx, "lan")
+	if len(got) != 1 || got[0].Key != "mac:aa:bb:cc:00:11:22" || got[0].Label != "My NAS" || !got[0].Known {
+		t.Fatalf("got %+v", got)
+	}
+}

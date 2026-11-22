@@ -179,3 +179,16 @@ func TestOfflineSkipsAlreadyOfflineAndOtherNetworks(t *testing.T) {
 		t.Fatalf("unexpected %+v", evs)
 	}
 }
+
+func TestIPOnlyDeviceUpgradedWhenMACAppears(t *testing.T) {
+	old := dev("", "10.0.0.5", "nas")
+	old.Label = "My NAS"
+	changed, evs := Apply([]model.Device{old}, obs(host("aa:00:00:00:00:05", "10.0.0.5", "")), false)
+	if len(evs) != 0 {
+		t.Fatalf("events = %+v", evs)
+	}
+	if len(changed) != 1 || changed[0].Key != "mac:aa:00:00:00:00:05" || changed[0].PrevKey != "ip:10.0.0.5" ||
+		changed[0].MAC != "aa:00:00:00:00:05" || changed[0].Hostname != "nas" || !changed[0].FirstSeen.Equal(old.FirstSeen) {
+		t.Fatalf("changed = %+v", changed)
+	}
+}
