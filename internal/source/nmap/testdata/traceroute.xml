@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap">
+<host><status state="up"/>
+<address addr="10.20.0.5" addrtype="ipv4"/>
+<trace port="80" proto="tcp">
+<hop ttl="1" ipaddr="192.168.88.1" rtt="0.5"/>
+<hop ttl="2" ipaddr="10.0.0.1" rtt="1.0"/>
+<hop ttl="3" ipaddr="10.20.0.5" rtt="1.5"/>
+</trace>
+</host>
+</nmaprun>
