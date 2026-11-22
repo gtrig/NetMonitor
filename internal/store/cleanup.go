@@ -43,6 +43,10 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 			`DELETE FROM network_state WHERE network = ?1`,
 			`UPDATE OR IGNORE machine_members SET network = ?2 WHERE network = ?1`,
 			`DELETE FROM machine_members WHERE network = ?1`,
+			`DELETE FROM device_details WHERE network = ?2 AND key IN
+				(SELECT f.key FROM device_details AS f WHERE f.network = ?1 AND f.scanned_at > device_details.scanned_at)`,
+			`UPDATE OR IGNORE device_details SET network = ?2 WHERE network = ?1`,
+			`DELETE FROM device_details WHERE network = ?1`,
 		}
 		for _, q := range stmts {
 			if _, err := tx.ExecContext(ctx, q, from, to); err != nil {
@@ -85,6 +89,7 @@ func (s *Store) DeleteNetworkData(ctx context.Context, name string) error {
 			`DELETE FROM links WHERE network = ?`,
 			`DELETE FROM network_state WHERE network = ?`,
 			`DELETE FROM machine_members WHERE network = ?`,
+			`DELETE FROM device_details WHERE network = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, name); err != nil {
 				return err
@@ -104,8 +109,11 @@ func (s *Store) DeleteDevice(ctx context.Context, network, key string) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return ErrNotFound
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM machine_members WHERE network = ? AND key = ?`, network, key); err != nil {
-			return err
+		for _, q := range []string{`DELETE FROM machine_members WHERE network = ? AND key = ?`,
+			`DELETE FROM device_details WHERE network = ? AND key = ?`} {
+			if _, err := tx.ExecContext(ctx, q, network, key); err != nil {
+				return err
+			}
 		}
 		return pruneMachines(ctx, tx)
 	})

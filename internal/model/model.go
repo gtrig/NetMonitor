@@ -104,3 +104,32 @@ func DeviceKey(h Host) string {
 	}
 	return "ip:" + h.IP.String()
 }
+
+// Port is one open port found by a detailed (services) scan.
+type Port struct {
+	Proto   string `json:"proto"`
+	Port    int    `json:"port"`
+	State   string `json:"state"`
+	Service string `json:"service,omitempty"`
+	Product string `json:"product,omitempty"`
+	Version string `json:"version,omitempty"`
+	Extra   string `json:"extra,omitempty"`
+}
+
+// HostDetails is what a detailed scan found for one address.
+type HostDetails struct {
+	IP         netip.Addr
+	OS         string
+	OSAccuracy int
+	Ports      []Port
+}
+
+// DeviceDetails is the latest detailed-scan result stored for one device row.
+type DeviceDetails struct {
+	Network    string    `json:"network"`
+	Key        string    `json:"key"`
+	ScannedAt  time.Time `json:"scannedAt"`
+	OS         string    `json:"os,omitempty"`
+	OSAccuracy int       `json:"osAccuracy,omitempty"`
+	Ports      []Port    `json:"ports"`
+}

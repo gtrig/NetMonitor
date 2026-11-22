@@ -65,6 +65,15 @@ var migrations = []string{
 		PRIMARY KEY (network, key)
 	);
 	CREATE INDEX machine_members_id ON machine_members(machine_id);`,
+	`CREATE TABLE device_details (
+		network TEXT NOT NULL,
+		key TEXT NOT NULL,
+		scanned_at INTEGER NOT NULL,
+		os TEXT NOT NULL DEFAULT '',
+		os_accuracy INTEGER NOT NULL DEFAULT 0,
+		ports TEXT NOT NULL DEFAULT '[]',
+		PRIMARY KEY (network, key)
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.

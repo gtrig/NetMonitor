@@ -23,6 +23,8 @@ const (
 	DefaultDataDir  = "./data"
 	DefaultOUIPath  = "/usr/share/nmap/nmap-mac-prefixes"
 	DefaultInterval = 5 * time.Minute
+	// DefaultServicesInterval is the default interval of detailed (services) scans.
+	DefaultServicesInterval = 6 * time.Hour
 )
 
 type Config struct {
@@ -241,6 +243,9 @@ func (c *Config) applyDefaults() {
 	for i := range c.Networks {
 		n := &c.Networks[i]
 		for j := range n.Sources {
+			if n.Sources[j].Interval.Duration == 0 && n.Sources[j].Type == "services" {
+				n.Sources[j].Interval.Duration = DefaultServicesInterval
+			}
 			if n.Sources[j].Interval.Duration == 0 {
 				n.Sources[j].Interval.Duration = DefaultInterval
 			}
@@ -299,6 +304,7 @@ func (c *Config) Validate() error {
 		if len(n.Sources) == 0 {
 			bad("network %q: at least one source is required", n.Name)
 		}
+		services := 0
 		for _, s := range n.Sources {
 			if s.Traceroute && s.Type != "nmap" {
 				bad("network %q: traceroute is only available for nmap sources", n.Name)
@@ -311,6 +317,14 @@ func (c *Config) Validate() error {
 			case "snmp":
 				if !snmp[s.Ref] {
 					bad("network %q: snmp source refers to unknown snmp target %q", n.Name, s.Ref)
+				}
+			case "services":
+				services++
+				if services == 2 {
+					bad("network %q: only one services source per network", n.Name)
+				}
+				if s.Ref != "" {
+					bad("network %q: services sources take no ref", n.Name)
 				}
 			case "nmap":
 				for _, a := range s.Args {

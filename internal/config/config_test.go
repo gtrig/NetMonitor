@@ -160,3 +160,26 @@ networks:
 		t.Fatalf("nmap traceroute: %v", err)
 	}
 }
+
+func TestServicesSource(t *testing.T) {
+	c, err := Parse([]byte(`
+networks:
+  - {name: lan, cidr: 10.0.0.0/24, sources: [{type: nmap}, {type: services, args: ["-p", "1-65535"]}]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Networks[0].Sources[1].Interval.Duration; got != 6*time.Hour {
+		t.Fatalf("services default interval = %v", got)
+	}
+	for name, src := range map[string]string{
+		"traceroute": `[{type: services, traceroute: true}]`,
+		"twice":      `[{type: services}, {type: services}]`,
+		"ref":        `[{type: services, ref: core}]`,
+	} {
+		_, err := Parse([]byte("networks:\n  - {name: lan, cidr: 10.0.0.0/24, sources: " + src + "}\n"))
+		if err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
