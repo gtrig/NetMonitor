@@ -116,3 +116,18 @@ func TestTestUnknownChannel(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Finding 7: a stuck channel must not delay other channels.
+func TestChannelsDeliveredIndependently(t *testing.T) {
+	stuck := &recorder{block: make(chan struct{})}
+	defer close(stuck.block)
+	ok := &recorder{}
+	d := NewDispatcher([]config.Rule{{Channels: []string{"stuck", "ok"}}}, map[string]Notifier{"stuck": stuck, "ok": ok}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.Start(ctx)
+	for i := 0; i < 3; i++ {
+		d.Enqueue([]model.Event{{Type: model.EventDeviceNew, Network: "lan", Message: "x"}})
+	}
+	waitFor(t, func() bool { m, _ := ok.snapshot(); return len(m) == 3 })
+}

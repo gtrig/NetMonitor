@@ -45,7 +45,7 @@ type Dispatcher struct {
 	rules     []config.Rule
 	notifiers map[string]Notifier
 	known     func(key string) bool
-	queue     chan job
+	queues    map[string]chan job
 	backoff   []time.Duration
 	timeout   time.Duration
 }
@@ -55,22 +55,29 @@ func NewDispatcher(rules []config.Rule, ns map[string]Notifier, known func(key s
 	if known == nil {
 		known = func(string) bool { return false }
 	}
-	return &Dispatcher{rules: rules, notifiers: ns, known: known, queue: make(chan job, 100),
+	queues := map[string]chan job{}
+	for name := range ns {
+		queues[name] = make(chan job, 100)
+	}
+	return &Dispatcher{rules: rules, notifiers: ns, known: known, queues: queues,
 		backoff: []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}, timeout: 10 * time.Second}
 }
 
-// Start runs the delivery worker until ctx is done.
+// Start runs one delivery worker per channel until ctx is done, so a failing
+// channel never delays the others.
 func (d *Dispatcher) Start(ctx context.Context) {
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case j := <-d.queue:
-				d.deliver(ctx, j)
+	for _, q := range d.queues {
+		go func(q chan job) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case j := <-q:
+					d.deliver(ctx, j)
+				}
 			}
-		}
-	}()
+		}(q)
+	}
 }
 
 func (d *Dispatcher) deliver(ctx context.Context, j job) {
@@ -137,8 +144,12 @@ func (d *Dispatcher) Enqueue(events []model.Event) {
 			for _, e := range evs {
 				m.Lines = append(m.Lines, e.Message)
 			}
+			q, ok := d.queues[ch]
+			if !ok {
+				continue
+			}
 			select {
-			case d.queue <- job{channel: ch, msg: m}:
+			case q <- job{channel: ch, msg: m}:
 			default:
 				slog.Error("notify: queue full, dropping message", "channel", ch, "network", network)
 			}

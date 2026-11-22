@@ -22,7 +22,7 @@ func TestParseXMLHosts(t *testing.T) {
 		t.Fatalf("hosts=%+v links=%+v", hosts, links)
 	}
 	r := hosts[0]
-	if r.IP.String() != "192.168.88.1" || r.MAC != "48:a9:8a:00:00:01" || r.Vendor != "Routerboard.com" || r.Hostname != "router.lan" {
+	if !r.NameFromDNS || r.IP.String() != "192.168.88.1" || r.MAC != "48:a9:8a:00:00:01" || r.Vendor != "Routerboard.com" || r.Hostname != "router.lan" {
 		t.Fatalf("router = %+v", r)
 	}
 	if hosts[1].MAC != "" || hosts[1].IP.String() != "192.168.88.20" {

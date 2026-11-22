@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gtrig/netmon/internal/model"
@@ -82,7 +83,8 @@ func Apply(known []model.Device, obs model.Observations, firstEver bool) ([]mode
 		}
 		if !ok {
 			d := model.Device{Key: key, Network: obs.Network, MAC: h.MAC, IP: h.IP, Hostname: h.Hostname,
-				Vendor: h.Vendor, Port: h.Port, Online: true, FirstSeen: at, LastSeen: at, Sources: []string{sourceOf(h, obs)}}
+				Vendor: h.Vendor, Port: h.Port, Online: true, FirstSeen: at, LastSeen: at, Sources: []string{sourceOf(h, obs)},
+				SeenBy: map[string]time.Time{sourceOf(h, obs): at}}
 			// Possible spoof / replacement: another MAC device held this IP.
 			if h.MAC != "" {
 				for _, i := range byIP[h.IP] {
@@ -112,11 +114,27 @@ func Apply(known []model.Device, obs model.Observations, firstEver bool) ([]mode
 		} else if !d.IP.IsValid() {
 			d.IP = h.IP
 		}
-		if h.Hostname != "" && h.Hostname != d.Hostname {
-			if d.Hostname != "" {
-				ev(model.EventHostnameChanged, *d, fmt.Sprintf("%s hostname %q → %q", Describe(*d), d.Hostname, h.Hostname), d.Hostname, h.Hostname)
+		if d.MAC != "" || h.MAC != "" {
+			// Fold IP-only rows left at this IP into this device.
+			for _, i := range byIP[d.IP] {
+				if i != idx && devs[i].MAC == "" && devs[i].MergedInto == "" && devs[i].Key != d.Key {
+					devs[i].MergedInto = d.Key
+					touched[i] = true
+				}
 			}
-			d.Hostname = h.Hostname
+		}
+		if h.Hostname != "" && h.Hostname != d.Hostname {
+			switch {
+			case d.Hostname == "":
+				d.Hostname = h.Hostname
+			case h.NameFromDNS:
+				// Reverse DNS never overrides a name we already have (e.g. from DHCP).
+			case firstLabel(h.Hostname) == firstLabel(d.Hostname):
+				d.Hostname = h.Hostname // same host, different domain suffix
+			default:
+				ev(model.EventHostnameChanged, *d, fmt.Sprintf("%s hostname %q → %q", Describe(*d), d.Hostname, h.Hostname), d.Hostname, h.Hostname)
+				d.Hostname = h.Hostname
+			}
 		}
 		if h.Vendor != "" {
 			d.Vendor = h.Vendor
@@ -132,6 +150,10 @@ func Apply(known []model.Device, obs model.Observations, firstEver bool) ([]mode
 			ev(model.EventDeviceBackOnline, *d, "Back online: "+Describe(*d), "", "")
 		}
 		d.LastSeen = at
+		if d.SeenBy == nil {
+			d.SeenBy = map[string]time.Time{}
+		}
+		d.SeenBy[sourceOf(h, obs)] = at
 		if s := sourceOf(h, obs); !slices.Contains(d.Sources, s) {
 			d.Sources = append(d.Sources, s)
 		}
@@ -158,10 +180,10 @@ func sourceOf(h model.Host, obs model.Observations) string {
 	return obs.Source
 }
 
-// Offline marks online devices of network as offline once every source that has seen the
-// device has completed a successful collection more than that source's offline threshold after
-// the device was last seen. lastSuccess and after are keyed by source name. It never reads the
-// clock, so failed collections can't cause false offline events.
+// Offline marks online devices of network as offline when no source saw the device in its
+// latest successful collection and at least one source has gone longer than its threshold
+// (MissedScans × interval) without seeing it. lastSuccess and after are keyed by source name.
+// It never reads the clock, so failed collections can't cause false offline events.
 func Offline(known []model.Device, network string, lastSuccess map[string]time.Time, after map[string]time.Duration) ([]model.Device, []model.Event) {
 	var changed []model.Device
 	var events []model.Event
@@ -169,24 +191,34 @@ func Offline(known []model.Device, network string, lastSuccess map[string]time.T
 		if d.Network != network || !d.Online {
 			continue
 		}
-		missedByAll, applicable := true, false
+		seen := d.SeenBy
+		if len(seen) == 0 { // rows written before per-source tracking
+			seen = map[string]time.Time{}
+			for _, s := range d.Sources {
+				seen[s] = d.LastSeen
+			}
+		}
+		vouched, missed := false, false
 		var at time.Time
-		for _, src := range d.Sources {
+		for src, t := range seen {
 			ls, ok := lastSuccess[src]
 			th, ok2 := after[src]
 			if !ok || !ok2 {
 				continue // source no longer configured
 			}
-			applicable = true
-			if ls.Sub(d.LastSeen) <= th {
-				missedByAll = false
+			gap := ls.Sub(t)
+			if gap < time.Second { // seen in this source's latest collection
+				vouched = true
 				break
 			}
-			if ls.After(at) {
-				at = ls
+			if gap > th {
+				missed = true
+				if ls.After(at) {
+					at = ls
+				}
 			}
 		}
-		if !applicable || !missedByAll {
+		if vouched || !missed {
 			continue
 		}
 		d.Online = false
@@ -195,4 +227,9 @@ func Offline(known []model.Device, network string, lastSuccess map[string]time.T
 			At: at, Message: "Offline: " + Describe(d)})
 	}
 	return changed, events
+}
+
+func firstLabel(name string) string {
+	name, _, _ = strings.Cut(strings.ToLower(name), ".")
+	return name
 }

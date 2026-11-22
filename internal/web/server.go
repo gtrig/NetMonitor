@@ -91,7 +91,8 @@ func New(d Deps) http.Handler {
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthz", s.healthz)
-	root.Handle("/", s.auth(mux))
+	// Rejects cross-site POST/PATCH (CSRF, also against DNS-rebinding pages in browsers).
+	root.Handle("/", s.auth(http.NewCrossOriginProtection().Handler(mux)))
 	return securityHeaders(root)
 }
 

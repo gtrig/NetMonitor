@@ -166,3 +166,16 @@ func TestPagesRender(t *testing.T) {
 		t.Errorf("static: %d", rr.Code)
 	}
 }
+
+// Finding 6: cross-site requests to mutating endpoints are rejected.
+func TestCrossOriginPostRejected(t *testing.T) {
+	h, _, fs := newTest(t, nil)
+	req := httptest.NewRequest("POST", "/api/scan/lan", nil)
+	req.Header.Set("Origin", "http://evil.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != 403 || len(fs.scanned) != 0 {
+		t.Fatalf("code=%d scanned=%v", rr.Code, fs.scanned)
+	}
+}

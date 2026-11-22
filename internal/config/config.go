@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -110,9 +111,17 @@ func Load(path string) (*Config, error) {
 
 // Parse expands env references in data, decodes it, applies defaults and validates.
 func Parse(data []byte) (*Config, error) {
-	expanded := os.ExpandEnv(string(data))
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	expandNode(&root)
+	expanded, err := yaml.Marshal(&root)
+	if err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
 	var c Config
-	dec := yaml.NewDecoder(bytes.NewReader([]byte(expanded)))
+	dec := yaml.NewDecoder(bytes.NewReader(expanded))
 	dec.KnownFields(true)
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -297,4 +306,22 @@ func (n Network) OfflineAfterFor(s SourceRef) time.Duration {
 		return n.OfflineAfter.Duration
 	}
 	return MissedScans * s.Interval.Duration
+}
+
+var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expandNode replaces ${VAR} in scalar values with the environment value. Expansion happens
+// after YAML parsing, so secrets containing YAML syntax or "$" are kept verbatim.
+func expandNode(n *yaml.Node) {
+	if n.Kind == yaml.ScalarNode && strings.Contains(n.Value, "${") {
+		v := envRef.ReplaceAllStringFunc(n.Value, func(m string) string {
+			return os.Getenv(m[2 : len(m)-1])
+		})
+		if v != n.Value {
+			n.Value, n.Tag, n.Style = v, "!!str", yaml.DoubleQuotedStyle
+		}
+	}
+	for _, c := range n.Content {
+		expandNode(c)
+	}
 }

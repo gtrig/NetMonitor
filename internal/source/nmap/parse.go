@@ -57,6 +57,7 @@ func ParseXML(data []byte) ([]model.Host, []model.Link, error) {
 		}
 		if len(xh.Hostnames) > 0 {
 			h.Hostname = xh.Hostnames[0].Name
+			h.NameFromDNS = true // nmap names come from PTR lookups
 		}
 		hosts = append(hosts, h)
 

@@ -113,3 +113,21 @@ networks:
 		})
 	}
 }
+
+// Finding 9: secrets are expanded inside values, never re-parsed as YAML.
+func TestEnvExpansionKeepsSpecialCharacters(t *testing.T) {
+	t.Setenv("RPASS", `a #b: c "d"`)
+	c, err := Parse([]byte(`
+routers:
+  - {name: core, type: mikrotik, address: 1.2.3.4:8728, username: u, password: "${RPASS}"}
+  - {name: ap, type: mikrotik, address: 1.2.3.5:8728, username: u, password: pa$$w0rd}
+networks:
+  - {name: lan, cidr: 10.0.0.0/24, sources: [{type: router, ref: core}]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Routers[0].Password != `a #b: c "d"` || c.Routers[1].Password != "pa$$w0rd" {
+		t.Fatalf("passwords = %q, %q", c.Routers[0].Password, c.Routers[1].Password)
+	}
+}

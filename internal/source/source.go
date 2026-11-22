@@ -83,8 +83,8 @@ func combine(a, b model.Host) model.Host {
 	if a.MAC == "" {
 		a.MAC = b.MAC
 	}
-	if a.Hostname == "" {
-		a.Hostname = b.Hostname
+	if a.Hostname == "" || (a.NameFromDNS && !b.NameFromDNS && b.Hostname != "") {
+		a.Hostname, a.NameFromDNS = b.Hostname, b.NameFromDNS
 	}
 	if a.Vendor == "" {
 		a.Vendor = b.Vendor

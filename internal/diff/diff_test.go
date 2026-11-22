@@ -192,3 +192,66 @@ func TestIPOnlyDeviceUpgradedWhenMACAppears(t *testing.T) {
 		t.Fatalf("changed = %+v", changed)
 	}
 }
+
+// Finding 2: DNS-derived names never overwrite a known name; same-host names don't emit.
+func TestDNSNameDoesNotOverwriteKnownHostname(t *testing.T) {
+	known := []model.Device{dev("aa:00:00:00:00:01", "10.0.0.1", "phone")}
+	h := host("aa:00:00:00:00:01", "10.0.0.1", "phone.lan")
+	h.NameFromDNS = true
+	changed, evs := Apply(known, obs(h), false)
+	if len(evs) != 0 || changed[0].Hostname != "phone" {
+		t.Fatalf("events=%+v hostname=%q", evs, changed[0].Hostname)
+	}
+}
+
+func TestLeaseNameReplacesDNSNameSilently(t *testing.T) {
+	known := []model.Device{dev("aa:00:00:00:00:01", "10.0.0.1", "phone.lan")}
+	changed, evs := Apply(known, obs(host("aa:00:00:00:00:01", "10.0.0.1", "phone")), false)
+	if len(evs) != 0 || changed[0].Hostname != "phone" {
+		t.Fatalf("events=%+v hostname=%q", evs, changed[0].Hostname)
+	}
+}
+
+// Finding 3: per-source last-seen; a fast source missing 3 times + slow source's latest
+// collection not seeing it → offline, without waiting for 3 slow misses.
+func TestOfflineUsesPerSourceSeen(t *testing.T) {
+	d := dev("aa:00:00:00:00:01", "10.0.0.1", "a")
+	d.Sources = []string{"router:core", "nmap"}
+	d.SeenBy = map[string]time.Time{"router:core": t0.Add(-5 * time.Minute), "nmap": t0.Add(-10 * time.Minute)}
+	d.LastSeen = t0.Add(-5 * time.Minute)
+	after := map[string]time.Duration{"router:core": 3 * time.Minute, "nmap": 45 * time.Minute}
+	// nmap's latest collection (t0-10m) saw it: still online.
+	last := map[string]time.Time{"router:core": t0, "nmap": t0.Add(-10 * time.Minute)}
+	if _, evs := Offline([]model.Device{d}, "lan", last, after); len(evs) != 0 {
+		t.Fatalf("unexpected %+v", evs)
+	}
+	// nmap ran again at t0 and missed it: offline now.
+	last["nmap"] = t0
+	if _, evs := Offline([]model.Device{d}, "lan", last, after); len(evs) != 1 {
+		t.Fatal("expected offline")
+	}
+}
+
+func TestApplyRecordsSeenBy(t *testing.T) {
+	known := []model.Device{dev("aa:00:00:00:00:01", "10.0.0.1", "a")}
+	changed, _ := Apply(known, obs(host("aa:00:00:00:00:01", "10.0.0.1", "a")), false)
+	if !changed[0].SeenBy["router:core"].Equal(t0) {
+		t.Fatalf("seenBy = %v", changed[0].SeenBy)
+	}
+}
+
+// Finding 8: an IP-only row at an IP taken over by an existing MAC device is folded into it.
+func TestGhostIPOnlyDeviceMergedIntoMACDevice(t *testing.T) {
+	macDev := dev("aa:00:00:00:00:01", "10.0.0.9", "a")
+	ghost := dev("", "10.0.0.5", "")
+	changed, evs := Apply([]model.Device{macDev, ghost}, obs(host("aa:00:00:00:00:01", "10.0.0.5", "")), false)
+	var merged bool
+	for _, c := range changed {
+		if c.Key == "ip:10.0.0.5" && c.MergedInto == "mac:aa:00:00:00:00:01" {
+			merged = true
+		}
+	}
+	if !merged || types(evs)[model.EventIPChanged] != 1 {
+		t.Fatalf("changed=%+v events=%+v", changed, evs)
+	}
+}

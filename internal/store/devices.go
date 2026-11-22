@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"net/netip"
 	"slices"
 	"strings"
@@ -12,7 +13,7 @@ import (
 
 // Devices returns the devices of network, or of all networks when network is "".
 func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, error) {
-	q := `SELECT network, key, mac, ip, hostname, vendor, label, port, known, online, first_seen, last_seen, sources FROM devices`
+	q := `SELECT network, key, mac, ip, hostname, vendor, label, port, known, online, first_seen, last_seen, sources, seen_by FROM devices`
 	var args []any
 	if network != "" {
 		q += ` WHERE network = ?`
@@ -27,10 +28,10 @@ func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, er
 	var out []model.Device
 	for rows.Next() {
 		var d model.Device
-		var ip, sources string
+		var ip, sources, seenBy string
 		var first, last int64
 		if err := rows.Scan(&d.Network, &d.Key, &d.MAC, &ip, &d.Hostname, &d.Vendor, &d.Label, &d.Port,
-			&d.Known, &d.Online, &first, &last, &sources); err != nil {
+			&d.Known, &d.Online, &first, &last, &sources, &seenBy); err != nil {
 			return nil, err
 		}
 		d.IP, _ = netip.ParseAddr(ip)
@@ -38,6 +39,15 @@ func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, er
 		d.LastSeen = time.Unix(last, 0).UTC()
 		if sources != "" {
 			d.Sources = strings.Split(sources, ",")
+		}
+		if seenBy != "" {
+			var m map[string]int64
+			if json.Unmarshal([]byte(seenBy), &m) == nil {
+				d.SeenBy = make(map[string]time.Time, len(m))
+				for k, v := range m {
+					d.SeenBy[k] = time.Unix(v, 0).UTC()
+				}
+			}
 		}
 		out = append(out, d)
 	}
@@ -58,17 +68,31 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO devices
-		(network, key, mac, ip, hostname, vendor, port, online, first_seen, last_seen, sources)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(network, key, mac, ip, hostname, vendor, port, online, first_seen, last_seen, sources, seen_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (network, key) DO UPDATE SET
 		mac = excluded.mac, ip = excluded.ip, hostname = excluded.hostname, vendor = excluded.vendor,
 		port = excluded.port, online = excluded.online, first_seen = excluded.first_seen,
-		last_seen = excluded.last_seen, sources = excluded.sources`)
+		last_seen = excluded.last_seen, sources = excluded.sources, seen_by = excluded.seen_by`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, d := range devs {
+		if d.MergedInto != "" {
+			// Move user metadata to the surviving device, then drop this row.
+			if _, err := tx.ExecContext(ctx, `UPDATE devices SET
+				label = CASE WHEN label = '' THEN (SELECT label FROM devices WHERE network = ?1 AND key = ?2) ELSE label END,
+				known = MAX(known, (SELECT known FROM devices WHERE network = ?1 AND key = ?2))
+				WHERE network = ?1 AND key = ?3 AND EXISTS (SELECT 1 FROM devices WHERE network = ?1 AND key = ?2)`,
+				d.Network, d.Key, d.MergedInto); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE network = ? AND key = ?`, d.Network, d.Key); err != nil {
+				return err
+			}
+			continue
+		}
 		if d.PrevKey != "" && d.PrevKey != d.Key {
 			// Rename keeps label/known; if the new key already exists, drop the old row instead.
 			if _, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE network = ? AND key = ?
@@ -83,8 +107,17 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 		if d.IP.IsValid() {
 			ip = d.IP.String()
 		}
+		seen := ""
+		if len(d.SeenBy) > 0 {
+			m := make(map[string]int64, len(d.SeenBy))
+			for k, v := range d.SeenBy {
+				m[k] = v.Unix()
+			}
+			b, _ := json.Marshal(m)
+			seen = string(b)
+		}
 		if _, err := stmt.ExecContext(ctx, d.Network, d.Key, d.MAC, ip, d.Hostname, d.Vendor, d.Port, d.Online,
-			d.FirstSeen.Unix(), d.LastSeen.Unix(), strings.Join(d.Sources, ",")); err != nil {
+			d.FirstSeen.Unix(), d.LastSeen.Unix(), strings.Join(d.Sources, ","), seen); err != nil {
 			return err
 		}
 	}

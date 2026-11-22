@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,6 +45,11 @@ func run() error {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err
+	}
+	if host, _, err := net.SplitHostPort(cfg.Listen); err == nil && cfg.Auth == nil {
+		if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+			slog.Warn("web UI is reachable from the network WITHOUT authentication; set auth: in the config", "listen", cfg.Listen)
+		}
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return err
@@ -106,13 +112,29 @@ func run() error {
 
 // buildJobs creates one job per configured source and the per-network gateway router.
 func buildJobs(cfg *config.Config) ([]scheduler.Job, map[string]string) {
+	// Map router management addresses to configured names so neighbors and SNMP views of
+	// the same router land on one map node, even when identities collide.
+	byAddr := map[string]string{}
+	for _, r := range cfg.Routers {
+		host, _, err := net.SplitHostPort(r.Address)
+		if err != nil {
+			host = r.Address
+		}
+		byAddr[host] = r.Name
+	}
+	resolve := func(address, identity string) string {
+		if name, ok := byAddr[address]; ok {
+			return name
+		}
+		return identity
+	}
 	routers := map[string]*mikrotik.Source{}
 	for _, r := range cfg.Routers {
-		routers[r.Name] = mikrotik.New(r)
+		routers[r.Name] = mikrotik.New(r, resolve)
 	}
 	targets := map[string]*snmp.Source{}
 	for _, t := range cfg.SNMPTargets {
-		targets[t.Name] = snmp.New(t)
+		targets[t.Name] = snmp.New(t, resolve)
 	}
 	var jobs []scheduler.Job
 	gateways := map[string]string{}

@@ -61,6 +61,7 @@ func Enrich(obs *model.Observations, oui *OUI, r *Resolver) {
 		}
 		if h.Hostname == "" && r != nil && h.IP.IsValid() {
 			h.Hostname = r.Name(ctx, h.IP)
+			h.NameFromDNS = h.Hostname != ""
 		}
 	}
 }

@@ -24,7 +24,8 @@ networks:
   - name: lan
     cidr: 192.168.88.0/24
     # exclude: [192.168.88.254]
-    # offline_after: 15m            # default: 3x the smallest source interval
+    # offline_after: 15m   # default: a device is offline once no source saw it in its
+    #                      # latest scan and one source has missed it for 3 of its intervals
     sources:
       - {type: router, ref: core, interval: 1m}
       - {type: snmp, ref: core-snmp, interval: 5m}

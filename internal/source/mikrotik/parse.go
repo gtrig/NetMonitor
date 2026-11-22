@@ -2,6 +2,7 @@ package mikrotik
 
 import (
 	"net/netip"
+	"strings"
 
 	"github.com/gtrig/netmon/internal/model"
 )
@@ -11,8 +12,11 @@ func parseARP(rows []map[string]string) []model.Host {
 	var out []model.Host
 	for _, r := range rows {
 		switch r["status"] {
-		case "incomplete", "failed":
-			continue
+		case "incomplete", "failed", "permanent":
+			continue // static entries don't prove the device is present
+		}
+		if r["dhcp"] == "true" || r["dynamic"] == "false" {
+			continue // DHCP add-arp / static entries live for the whole lease
 		}
 		if r["invalid"] == "true" || r["disabled"] == "true" || r["complete"] == "false" {
 			continue
@@ -52,18 +56,27 @@ func parseBridgeHosts(rows []map[string]string) map[string]string {
 	return out
 }
 
+// Resolver maps a router (by management address and identity) to its node ID,
+// e.g. the configured router name. It returns identity when it knows no better.
+type Resolver func(address, identity string) string
+
 // parseNeighbors returns router↔router links for discovered neighbors (MNDP/LLDP/CDP).
-func parseNeighbors(identity string, rows []map[string]string) []model.Link {
+// local is this router's node ID.
+func parseNeighbors(local string, rows []map[string]string, resolve Resolver) []model.Link {
 	var out []model.Link
 	seen := map[string]bool{}
 	for _, r := range rows {
-		id := r["identity"]
-		if id == "" || id == identity || seen[id] {
+		if r["identity"] == "" {
+			continue
+		}
+		addr, _, _ := strings.Cut(r["address"], ",")
+		id := resolve(addr, r["identity"])
+		if id == "" || id == local || seen[id] {
 			continue
 		}
 		seen[id] = true
 		out = append(out, model.Link{
-			A:     model.NodeRef{Kind: "router", ID: identity},
+			A:     model.NodeRef{Kind: "router", ID: local},
 			B:     model.NodeRef{Kind: "router", ID: id},
 			Label: r["interface"],
 		})

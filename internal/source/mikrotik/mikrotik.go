@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -19,19 +20,35 @@ type Runner interface {
 	Print(ctx context.Context, path string) ([]map[string]string, error)
 }
 
-// Source is a RouterOS API source.
+// Source is a RouterOS API source. Its router node ID is the configured router name, so two
+// routers with the same (e.g. factory default "MikroTik") identity stay distinct.
 type Source struct {
-	name string
-	run  Runner
+	name    string
+	run     Runner
+	resolve Resolver
 }
 
-// New returns a source that connects to the router described by r.
-func New(r config.Router) *Source {
-	return &Source{name: r.Name, run: &apiRunner{cfg: r}}
+func identityResolver(_, identity string) string { return identity }
+
+// New returns a source that connects to the router described by r. resolve maps neighbor
+// routers to node IDs (nil: use their identity).
+func New(r config.Router, resolve Resolver) *Source {
+	return (&Source{name: r.Name, run: &apiRunner{cfg: r}}).WithResolver(resolve)
 }
 
 // NewWithRunner returns a source using run (for tests).
-func NewWithRunner(name string, run Runner) *Source { return &Source{name: name, run: run} }
+func NewWithRunner(name string, run Runner) *Source {
+	return &Source{name: name, run: run, resolve: identityResolver}
+}
+
+// WithResolver sets the neighbor resolver (nil: identity).
+func (s *Source) WithResolver(resolve Resolver) *Source {
+	if resolve == nil {
+		resolve = identityResolver
+	}
+	s.resolve = resolve
+	return s
+}
 
 func (s *Source) Name() string { return "router:" + s.name }
 
@@ -50,15 +67,11 @@ func (s *Source) Collect(ctx context.Context, n config.Network) (model.Observati
 		}
 		return rows
 	}
-	identity := s.name
-	if rows := optional("/system/identity/print"); len(rows) > 0 && rows[0]["name"] != "" {
-		identity = rows[0]["name"]
-	}
 	names := parseLeases(optional("/ip/dhcp-server/lease/print"))
 	ports := parseBridgeHosts(optional("/interface/bridge/host/print"))
-	obs.Links = parseNeighbors(identity, optional("/ip/neighbor/print"))
+	obs.Links = parseNeighbors(s.name, optional("/ip/neighbor/print"), s.resolve)
 
-	router := model.NodeRef{Kind: "router", ID: identity}
+	router := model.NodeRef{Kind: "router", ID: s.name}
 	for _, h := range parseARP(arp) {
 		h.Source = s.Name()
 		h.Hostname = names[h.MAC]
@@ -87,15 +100,33 @@ func (a *apiRunner) connect(ctx context.Context) (*routeros.Client, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	var c *routeros.Client
-	var err error
-	if a.cfg.TLS {
-		c, err = routeros.DialTLSContext(ctx, a.cfg.Address, a.cfg.Username, a.cfg.Password,
-			&tls.Config{InsecureSkipVerify: a.cfg.InsecureSkipVerify}) //nolint:gosec // opt-in for self-signed RouterOS certs
-	} else {
-		c, err = routeros.DialContext(ctx, a.cfg.Address, a.cfg.Username, a.cfg.Password)
-	}
+	d := &net.Dialer{}
+	conn, err := d.DialContext(ctx, "tcp", a.cfg.Address)
 	if err != nil {
+		return nil, err
+	}
+	if a.cfg.TLS {
+		host, _, _ := net.SplitHostPort(a.cfg.Address)
+		tc := tls.Client(conn, &tls.Config{ServerName: host, InsecureSkipVerify: a.cfg.InsecureSkipVerify}) //nolint:gosec // opt-in for self-signed RouterOS certs
+		if err := tc.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		conn = tc
+	}
+	// The RouterOS client ignores ctx once connected; closing the conn unblocks it.
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	c, err := routeros.NewClient(conn)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if err := c.Login(a.cfg.Username, a.cfg.Password); err != nil {
+		c.Close()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, err
 	}
 	a.client = c
@@ -111,10 +142,14 @@ func (a *apiRunner) Print(ctx context.Context, path string) ([]map[string]string
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	reply, err := c.RunContext(ctx, path)
-	if err != nil {
+	stop := context.AfterFunc(ctx, func() { c.Close() })
+	reply, err := c.Run(path)
+	if !stop() || err != nil {
 		c.Close()
 		a.client = nil
+		if err == nil || ctx.Err() != nil {
+			return nil, fmt.Errorf("%s: %w", path, context.Cause(ctx))
+		}
 		return nil, err
 	}
 	rows := make([]map[string]string, 0, len(reply.Re))

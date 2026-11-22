@@ -54,3 +54,13 @@ func TestResolverCachesAndTrimsDot(t *testing.T) {
 		t.Fatalf("calls = %d", calls)
 	}
 }
+
+func TestEnrichMarksDNSNames(t *testing.T) {
+	r := NewResolver(time.Minute)
+	r.look = func(ctx context.Context, addr string) ([]string, error) { return []string{"x.lan."}, nil }
+	obs := model.Observations{Hosts: []model.Host{{IP: netip.MustParseAddr("10.0.0.1")}}}
+	Enrich(&obs, nil, r)
+	if obs.Hosts[0].Hostname != "x.lan" || !obs.Hosts[0].NameFromDNS {
+		t.Fatalf("host = %+v", obs.Hosts[0])
+	}
+}

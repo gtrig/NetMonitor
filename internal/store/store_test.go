@@ -167,3 +167,34 @@ func TestUpsertWithPrevKeyRenamesAndKeepsMeta(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestUpsertMergedIntoDeletesRowAndKeepsMeta(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	ghost := sampleDevice()
+	ghost.Key, ghost.MAC = "ip:10.0.0.5", ""
+	target := sampleDevice()
+	s.UpsertDevices(ctx, []model.Device{ghost, target})
+	label := "Printer"
+	s.SetDeviceMeta(ctx, "ip:10.0.0.5", &label, nil)
+	ghost.MergedInto = target.Key
+	if err := s.UpsertDevices(ctx, []model.Device{ghost}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Devices(ctx, "lan")
+	if len(got) != 1 || got[0].Key != target.Key || got[0].Label != "Printer" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSeenByRoundTrip(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	d := sampleDevice()
+	d.SeenBy = map[string]time.Time{"nmap": d.LastSeen, "router:core": d.LastSeen.Add(-time.Minute)}
+	s.UpsertDevices(ctx, []model.Device{d})
+	got, _ := s.Devices(ctx, "lan")
+	if len(got[0].SeenBy) != 2 || !got[0].SeenBy["router:core"].Equal(d.LastSeen.Add(-time.Minute)) {
+		t.Fatalf("seenBy = %v", got[0].SeenBy)
+	}
+}

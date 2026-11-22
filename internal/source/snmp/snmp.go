@@ -20,13 +20,17 @@ type Walker interface {
 
 // Source is an SNMP source.
 type Source struct {
-	name string
-	dial func(ctx context.Context) (Walker, func(), error)
+	name    string
+	address string
+	dial    func(ctx context.Context) (Walker, func(), error)
+	resolve func(address, identity string) string
 }
 
-// New returns a source connecting to t on every collection.
-func New(t config.SNMPTarget) *Source {
-	return &Source{name: t.Name, dial: func(ctx context.Context) (Walker, func(), error) {
+// New returns a source connecting to t on every collection. resolve maps this device
+// (by address and sysName) to its router node ID so it matches a RouterOS source for the
+// same router (nil: use sysName).
+func New(t config.SNMPTarget, resolve func(address, identity string) string) *Source {
+	return &Source{name: t.Name, address: t.Address, resolve: resolve, dial: func(ctx context.Context) (Walker, func(), error) {
 		g := &gosnmp.GoSNMP{
 			Target: t.Address, Port: uint16(t.Port), Timeout: 5 * time.Second, Retries: 2,
 			MaxRepetitions: 25, Context: ctx,
@@ -108,6 +112,9 @@ func (s *Source) Collect(ctx context.Context, n config.Network) (model.Observati
 		if v := string(pduBytes(p[0])); v != "" {
 			local = v
 		}
+	}
+	if s.resolve != nil {
+		local = s.resolve(s.address, local)
 	}
 	ifNames := parseStringTable(optional(oidIfName))
 	ports := parseFDB(optional(oidFDBPort), parseIntTable(optional(oidBasePortIf)), ifNames)

@@ -16,6 +16,8 @@ type Host struct {
 	Vendor   string
 	Port     string // bridge/interface the host was seen on, if known
 	Source   string
+	// NameFromDNS marks Hostname as reverse-DNS derived (lower priority than DHCP lease names).
+	NameFromDNS bool
 }
 
 // NodeRef identifies a node in the topology. Kind is "router" or "device".
@@ -58,6 +60,11 @@ type Device struct {
 	// PrevKey is set (not stored) when the device's key changed in this update,
 	// e.g. an IP-only device whose MAC became known; the store renames the row.
 	PrevKey string
+	// SeenBy holds, per source name, when that source last reported the device.
+	SeenBy map[string]time.Time
+	// MergedInto is set (not stored) when this IP-only device was folded into another device;
+	// the store moves its label/known flag to that device and deletes this row.
+	MergedInto string
 }
 
 // Event is a detected change.

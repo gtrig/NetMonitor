@@ -57,6 +57,7 @@ var migrations = []string{
 		last_success INTEGER NOT NULL,
 		PRIMARY KEY (network, source)
 	);`,
+	`ALTER TABLE devices ADD COLUMN seen_by TEXT NOT NULL DEFAULT '';`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.
