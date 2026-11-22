@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
+	"slices"
 	"sync"
 
 	"github.com/gtrig/netmon/internal/config"
@@ -147,7 +149,8 @@ func (a *App) swap(raw, eff *config.Config, renames map[string]string) error {
 		return err // fail before stopping the running runtime
 	}
 	old.stop()
-	for from, to := range renames {
+	for _, r := range orderRenames(renames) {
+		from, to := r[0], r[1]
 		if err := a.opts.Store.RenameNetwork(context.Background(), from, to); err != nil {
 			slog.Error("moving stored data of renamed network", "from", from, "to", to, "err", err)
 		}
@@ -238,4 +241,31 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 		}
 	}
 	return jobs, gateways
+}
+
+// orderRenames turns old→new network renames into steps that can run one after another: a
+// name is renamed away before anything is renamed onto it, and swaps go through a temporary name.
+func orderRenames(renames map[string]string) [][2]string {
+	pending := maps.Clone(renames)
+	var steps [][2]string
+	for len(pending) > 0 {
+		progressed := false
+		for _, from := range slices.Sorted(maps.Keys(pending)) {
+			to := pending[from]
+			if _, busy := pending[to]; busy {
+				continue // to still holds data that must move first
+			}
+			steps = append(steps, [2]string{from, to})
+			delete(pending, from)
+			progressed = true
+		}
+		if !progressed { // only cycles left: park one name under a temporary one
+			from := slices.Sorted(maps.Keys(pending))[0]
+			tmp := "\x00rename:" + from
+			steps = append(steps, [2]string{from, tmp})
+			pending[tmp] = pending[from]
+			delete(pending, from)
+		}
+	}
+	return steps
 }

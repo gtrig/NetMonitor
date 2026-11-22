@@ -3,6 +3,7 @@
 <taskbegin task="Ping Scan" time="1700000000"/>
 <taskprogress task="Ping Scan" time="1700000002" percent="23.45" remaining="7" etime="1700000009"/>
 <taskend task="Ping Scan" time="1700000010" extrainfo="256 total hosts"/>
+<taskbegin task="Parallel DNS resolution of 256 hosts." time="1700000010"/>
 <taskprogress task="Traceroute" time="1700000012" percent="50.00" remaining="2" etime="1700000014"/>
 <taskprogress task="Bogus" percent="nan"/>
 </nmaprun>

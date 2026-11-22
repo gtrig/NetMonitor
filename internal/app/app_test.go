@@ -147,3 +147,24 @@ func TestSaveRenamesNetworkData(t *testing.T) {
 		t.Fatalf("devices left under old name = %d", len(ds))
 	}
 }
+
+// Review minor: chained and swapped renames in one save must not mix data.
+func TestOrderRenames(t *testing.T) {
+	apply := func(renames map[string]string, data map[string]string) map[string]string {
+		for _, r := range orderRenames(renames) {
+			if v, ok := data[r[0]]; ok {
+				delete(data, r[0])
+				data[r[1]] = v
+			}
+		}
+		return data
+	}
+	got := apply(map[string]string{"A": "B", "B": "C"}, map[string]string{"A": "a", "B": "b"})
+	if got["B"] != "a" || got["C"] != "b" || len(got) != 2 {
+		t.Fatalf("chain: %v", got)
+	}
+	got = apply(map[string]string{"A": "B", "B": "A"}, map[string]string{"A": "a", "B": "b"})
+	if got["A"] != "b" || got["B"] != "a" || len(got) != 2 {
+		t.Fatalf("swap: %v", got)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gtrig/netmon/internal/config"
@@ -28,10 +29,17 @@ type ExecFunc func(ctx context.Context, args ...string) ([]byte, error)
 // Progress is a progress report parsed from nmap's --stats-every output.
 type Progress = source.Progress
 
-var taskProgress = regexp.MustCompile(`<taskprogress\b[^>]*\btask="([^"]*)"[^>]*\bpercent="([^"]*)"`)
+var (
+	taskProgress = regexp.MustCompile(`<taskprogress\b[^>]*\btask="([^"]*)"[^>]*\bpercent="([^"]*)"`)
+	taskBegin    = regexp.MustCompile(`<taskbegin\b[^>]*\btask="([^"]*)"`)
+)
 
-// ParseProgress reads a <taskprogress task=... percent=.../> line.
+// ParseProgress reads a <taskprogress task=... percent=.../> line, or a <taskbegin task=.../>
+// line, which reports the new task with an unknown percentage (-1).
 func ParseProgress(line string) (Progress, bool) {
+	if m := taskBegin.FindStringSubmatch(line); m != nil {
+		return Progress{Task: strings.TrimSuffix(html.UnescapeString(m[1]), "."), Percent: -1}, true
+	}
 	m := taskProgress.FindStringSubmatch(line)
 	if m == nil {
 		return Progress{}, false
@@ -51,6 +59,12 @@ func DefaultExec(ctx context.Context, args ...string) ([]byte, error) {
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
+	}
+	// Without a terminal on stdin nmap prints no progress; scanning still works without one.
+	if master, slave, perr := openPTY(); perr == nil {
+		cmd.Stdin = slave
+		defer master.Close()
+		defer slave.Close()
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -101,12 +115,13 @@ func (s *Source) Name() string { return "nmap" }
 // BuildArgs returns the full nmap argument list: always host discovery with XML (and progress
 // every 2s) to stdout, plus --traceroute when asked.
 func BuildArgs(user []string, traceroute bool, cidr netip.Prefix) []string {
-	args := []string{"-sn", "-oX", "-", "--stats-every", "2s"}
+	// -v adds <taskbegin> lines, so phases without percentages (DNS resolution) are reported too.
+	args := []string{"-sn", "-v", "-oX", "-", "--stats-every", "2s"}
 	if traceroute {
 		args = append(args, "--traceroute")
 	}
 	for _, a := range user {
-		if a != "-sn" && !(traceroute && a == "--traceroute") {
+		if a != "-sn" && a != "-v" && !(traceroute && a == "--traceroute") {
 			args = append(args, a)
 		}
 	}

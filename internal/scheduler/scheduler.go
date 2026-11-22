@@ -214,8 +214,13 @@ func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
 	})
 	ctx = source.WithProgress(ctx, func(p source.Progress) {
 		s.setStatus(j, func(st *JobStatus) {
-			v := p.Percent
-			st.Progress, st.Task = &v, p.Task
+			st.Task = p.Task
+			if p.Percent < 0 {
+				st.Progress = nil // phase without a percentage
+			} else {
+				v := p.Percent
+				st.Progress = &v
+			}
 		})
 	})
 	err := s.runOnce(ctx, j)

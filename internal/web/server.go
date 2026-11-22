@@ -390,9 +390,16 @@ func (s *server) apiJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiScanJob(w http.ResponseWriter, r *http.Request) {
+	// network/source guard against an id from before a reload pointing at another job.
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err == nil {
-		err = s.rt().Scheduler.ScanJob(id)
+		err = scheduler.ErrUnknownJob
+		q := r.URL.Query()
+		for _, j := range s.rt().Scheduler.Status() {
+			if j.ID == id && (q.Get("network") == "" || q.Get("network") == j.Network) && (q.Get("source") == "" || q.Get("source") == j.Source) {
+				err = s.rt().Scheduler.ScanJob(id)
+			}
+		}
 	} else {
 		err = scheduler.ErrUnknownJob
 	}

@@ -13,7 +13,7 @@
     if (m < 60) return m + "m " + String(s).padStart(2, "0") + "s";
     return Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m";
   };
-  // Server times are compared against the local clock, corrected by the poll age.
+  // Server timestamps are compared with the browser clock (same host or NTP-synced LAN).
   const since = (t) => (Date.now() - new Date(t)) / 1000;
 
   function row(j) {
@@ -24,7 +24,7 @@
       progress = j.progress != null
         ? `<div class="bar-outer" role="progressbar" aria-valuenow="${Math.round(j.progress)}" aria-valuemin="0" aria-valuemax="100"><div class="bar-inner" style="width:${j.progress}%"></div></div>
            <span class="small">${esc(j.task)} ${j.progress.toFixed(0)}% · ${elapsed}</span>`
-        : `<span class="spinner" aria-hidden="true"></span> <span class="small">${elapsed}</span>`;
+        : `<span class="spinner" aria-hidden="true"></span> <span class="small">${j.task ? esc(j.task) + " · " : ""}${elapsed}</span>`;
     } else if (state === "queued") {
       progress = `<span class="muted small">waiting for a free slot</span>`;
     }
@@ -45,6 +45,7 @@
   }
 
   async function poll() {
+    if (document.hidden) return;
     try { jobs = await api("GET", "/api/jobs"); fetchedAt = Date.now(); render(); } catch { /* keep last state */ }
   }
 
@@ -52,11 +53,13 @@
     const b = e.target.closest("[data-job]");
     if (!b) return;
     b.disabled = true;
-    try { await api("POST", `/api/jobs/${b.dataset.job}/scan`); toast("Scan started"); setTimeout(poll, 300); }
+    const j = jobs.find((x) => String(x.id) === b.dataset.job) || {};
+    try { await api("POST", `/api/jobs/${b.dataset.job}/scan?network=${encodeURIComponent(j.network || "")}&source=${encodeURIComponent(j.source || "")}`); toast("Scan started"); setTimeout(poll, 300); }
     catch (err) { toast("Scan failed: " + err.message); b.disabled = false; }
   });
 
   poll();
   setInterval(poll, 2000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
   setInterval(() => { if (Date.now() - fetchedAt > 900) render(); }, 1000);
 })();

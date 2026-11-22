@@ -13,8 +13,8 @@ type NetworkData struct {
 	Events  int    `json:"events"`
 }
 
-// RenameNetwork moves everything stored under network from to network to. Where to already has
-// a device with the same key, the existing row wins and an empty label (and the known flag) is
+// RenameNetwork moves everything stored under network from to network to. Where both hold a
+// device with the same key, the more recently seen row wins and an empty label (and the known flag) is
 // filled from the moved row. Existing state of to is kept; links of from are dropped (the next
 // collection recreates them).
 func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
@@ -23,10 +23,18 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		stmts := []string{
+			// Where both names hold the same key, each row fills the other's empty label and the
+			// known flag; then the row seen most recently survives.
 			`UPDATE devices AS t SET
 				label = CASE WHEN t.label = '' THEN f.label ELSE t.label END,
 				known = MAX(t.known, f.known)
 			FROM devices AS f WHERE f.network = ?1 AND t.network = ?2 AND f.key = t.key`,
+			`UPDATE devices AS f SET
+				label = CASE WHEN f.label = '' THEN t.label ELSE f.label END,
+				known = MAX(t.known, f.known)
+			FROM devices AS t WHERE f.network = ?1 AND t.network = ?2 AND f.key = t.key`,
+			`DELETE FROM devices WHERE network = ?2 AND key IN
+				(SELECT f.key FROM devices AS f WHERE f.network = ?1 AND f.last_seen > devices.last_seen)`,
 			`DELETE FROM devices WHERE network = ?1 AND key IN (SELECT key FROM devices WHERE network = ?2)`,
 			`UPDATE devices SET network = ?2 WHERE network = ?1`,
 			`UPDATE events SET network = ?2 WHERE network = ?1`,
@@ -113,4 +121,13 @@ func (s *Store) tx(ctx context.Context, f func(*sql.Tx) error) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// MergeStaleNetwork moves the data of a network that is no longer collected into network to.
+// Moved rows are marked offline: nothing has checked them since collection stopped.
+func (s *Store) MergeStaleNetwork(ctx context.Context, from, to string) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE devices SET online = 0 WHERE network = ?`, from); err != nil {
+		return err
+	}
+	return s.RenameNetwork(ctx, from, to)
 }

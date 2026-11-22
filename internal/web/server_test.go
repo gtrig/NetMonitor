@@ -198,6 +198,9 @@ func TestJobsAPI(t *testing.T) {
 	if rr := do(h, "POST", "/api/jobs/0/scan", "", true); rr.Code != 202 || len(fs.scanned) != 1 {
 		t.Fatalf("scan: %d %v", rr.Code, fs.scanned)
 	}
+	if rr := do(h, "POST", "/api/jobs/0/scan?network=other", "", true); rr.Code != 404 {
+		t.Fatalf("stale job id: %d", rr.Code)
+	}
 	for _, id := range []string{"9", "x"} {
 		if rr := do(h, "POST", "/api/jobs/"+id+"/scan", "", true); rr.Code != 404 {
 			t.Fatalf("job %s: %d", id, rr.Code)

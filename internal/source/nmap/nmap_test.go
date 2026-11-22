@@ -50,7 +50,7 @@ func TestParseXMLTraceroute(t *testing.T) {
 
 func TestBuildArgs(t *testing.T) {
 	got := BuildArgs([]string{"-sn", "-T4"}, false, netip.MustParsePrefix("10.0.0.0/24"))
-	want := []string{"-sn", "-oX", "-", "--stats-every", "2s", "-T4", "10.0.0.0/24"}
+	want := []string{"-sn", "-v", "-oX", "-", "--stats-every", "2s", "-T4", "10.0.0.0/24"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -89,7 +89,8 @@ func TestParseProgress(t *testing.T) {
 			got = append(got, p)
 		}
 	}
-	if len(got) != 2 || got[0].Task != "Ping Scan" || got[0].Percent != 23.45 || got[1].Task != "Traceroute" || got[1].Percent != 50 {
+	if len(got) != 4 || got[0].Task != "Ping Scan" || got[0].Percent != -1 || got[1].Percent != 23.45 ||
+		got[2].Task != "Parallel DNS resolution of 256 hosts" || got[2].Percent != -1 || got[3].Task != "Traceroute" || got[3].Percent != 50 {
 		t.Fatalf("got %+v", got)
 	}
 }

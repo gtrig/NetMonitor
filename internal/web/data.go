@@ -92,7 +92,7 @@ func (s *server) apiMergeNetworkData(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "into must name a configured network", http.StatusBadRequest)
 		return
 	}
-	if err := s.Store.RenameNetwork(r.Context(), name, body.Into); err != nil {
+	if err := s.Store.MergeStaleNetwork(r.Context(), name, body.Into); err != nil {
 		serverError(w, err)
 		return
 	}
@@ -112,6 +112,10 @@ func (s *server) apiDeleteNetworkData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	if !s.canEdit() {
+		http.Error(w, "read-only until auth is configured", http.StatusForbidden)
+		return
+	}
 	err := s.Store.DeleteDevice(r.Context(), r.URL.Query().Get("network"), r.PathValue("key"))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -124,6 +128,10 @@ func (s *server) apiDeleteDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiMergeMachine(w http.ResponseWriter, r *http.Request) {
+	if !s.canEdit() {
+		http.Error(w, "read-only until auth is configured", http.StatusForbidden)
+		return
+	}
 	var body struct {
 		Members []model.MemberRef `json:"members"`
 	}
@@ -141,6 +149,10 @@ func (s *server) apiMergeMachine(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiSplitMachine(w http.ResponseWriter, r *http.Request) {
+	if !s.canEdit() {
+		http.Error(w, "read-only until auth is configured", http.StatusForbidden)
+		return
+	}
 	var ref model.MemberRef
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&ref); err != nil {

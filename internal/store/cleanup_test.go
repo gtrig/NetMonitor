@@ -210,3 +210,41 @@ func TestMembershipFollowsPrevKeyAndMergedInto(t *testing.T) {
 		t.Fatalf("after MergedInto: %v", m)
 	}
 }
+
+// Review finding 2: renaming into a name that holds older, stale rows keeps the newer row.
+func TestRenameKeepsNewerRow(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	stale := dev("lan", "mac:aa", "10.0.0.2")
+	stale.LastSeen = stale.LastSeen.Add(-24 * time.Hour)
+	live := dev("GTLan", "mac:aa", "10.0.0.2")
+	live.Hostname = "fresh"
+	mustUpsert(t, s, stale, live)
+	s.db.Exec(`UPDATE devices SET label = 'old label' WHERE network = 'lan'`)
+	s.db.Exec(`UPDATE devices SET label = 'new label' WHERE network = 'GTLan'`)
+	if err := s.RenameNetwork(ctx, "GTLan", "lan"); err != nil {
+		t.Fatal(err)
+	}
+	ds, _ := s.Devices(ctx, "lan")
+	if len(ds) != 1 || ds[0].Hostname != "fresh" || ds[0].Label != "new label" {
+		t.Fatalf("kept %+v", ds)
+	}
+}
+
+// Review finding 1: merging stale data moves rows as offline, so no offline storm follows.
+func TestMergeStaleMarksMovedRowsOffline(t *testing.T) {
+	s, _ := openTemp(t)
+	ctx := context.Background()
+	mustUpsert(t, s, dev("lan", "ip:10.0.0.50", "10.0.0.50"), dev("GTLan", "mac:aa", "10.0.0.2"))
+	if err := s.MergeStaleNetwork(ctx, "lan", "GTLan"); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range func() []model.Device { ds, _ := s.Devices(ctx, "GTLan"); return ds }() {
+		if d.Key == "ip:10.0.0.50" && d.Online {
+			t.Fatalf("stale row moved as online: %+v", d)
+		}
+		if d.Key == "mac:aa" && !d.Online {
+			t.Fatal("live row changed")
+		}
+	}
+}

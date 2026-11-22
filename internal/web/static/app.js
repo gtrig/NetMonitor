@@ -69,7 +69,7 @@ if (table) {
       row.hidden = !show;
     }
   };
-  const mergeBtn = document.getElementById("mergeSel");
+  const mergeBtn = document.getElementById("mergeSel") || document.createElement("button");
   const selected = () => [...table.querySelectorAll("tr[data-key] input.sel:checked")].map((c) => c.closest("tr"));
   table.addEventListener("change", (e) => {
     if (e.target.classList.contains("sel")) mergeBtn.disabled = selected().length < 2;
@@ -90,6 +90,7 @@ if (table) {
       } else if (e.target.classList.contains("forget")) {
         if (!confirm(`Forget ${row.dataset.key} in ${row.dataset.network}? It comes back if a scan sees it again.`)) return;
         await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));
+        if (row.dataset.machine) { location.reload(); return; } // its machine may have dissolved
         row.remove();
         toast("Device forgotten");
       }
