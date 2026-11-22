@@ -105,6 +105,12 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/devices", s.apiDevices)
 	mux.HandleFunc("GET /api/events", s.apiEvents)
 	mux.HandleFunc("PATCH /api/devices/{key}", s.apiPatchDevice)
+	mux.HandleFunc("DELETE /api/devices/{key}", s.apiDeleteDevice)
+	mux.HandleFunc("POST /api/machines", s.apiMergeMachine)
+	mux.HandleFunc("POST /api/machines/split", s.apiSplitMachine)
+	mux.HandleFunc("GET /api/data/networks", s.apiDataNetworks)
+	mux.HandleFunc("POST /api/data/networks/{name}/merge", s.apiMergeNetworkData)
+	mux.HandleFunc("DELETE /api/data/networks/{name}", s.apiDeleteNetworkData)
 	mux.HandleFunc("POST /api/scan/{network}", s.apiScan)
 	mux.HandleFunc("POST /api/notify/test/{channel}", s.apiNotifyTest)
 	mux.HandleFunc("GET /settings", s.page("settings", "Settings"))
@@ -171,9 +177,10 @@ type deviceJSON struct {
 	FirstSeen time.Time `json:"firstSeen"`
 	LastSeen  time.Time `json:"lastSeen"`
 	Sources   []string  `json:"sources"`
+	Machine   int64     `json:"machine,omitempty"`
 }
 
-func toJSON(d model.Device) deviceJSON {
+func toJSON(d model.Device, machine int64) deviceJSON {
 	ip := ""
 	if d.IP.IsValid() {
 		ip = d.IP.String()
@@ -182,7 +189,7 @@ func toJSON(d model.Device) deviceJSON {
 		d.Sources = []string{}
 	}
 	return deviceJSON{d.Key, d.Network, d.MAC, ip, d.Hostname, d.Vendor, d.Label, d.Port, d.Known, d.Online,
-		d.FirstSeen, d.LastSeen, d.Sources}
+		d.FirstSeen, d.LastSeen, d.Sources, machine}
 }
 
 type eventJSON struct {
@@ -286,9 +293,14 @@ func (s *server) apiDevices(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	machines, err := s.Store.Machines(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
+	}
 	out := make([]deviceJSON, 0, len(devs))
 	for _, d := range devs {
-		out = append(out, toJSON(d))
+		out = append(out, toJSON(d, machines[model.MemberRef{Network: d.Network, Key: d.Key}]))
 	}
 	writeJSON(w, out)
 }
@@ -373,11 +385,12 @@ type pageData struct {
 	Title    string
 	Active   string
 	Networks []networkSummary
-	Devices  []model.Device
+	Devices  []deviceRow
 	Events   []model.Event
 	Channels []config.Channel
 	Network  string
 	Older    int64
+	CanEdit  bool
 }
 
 func (s *server) render(w http.ResponseWriter, page string, d pageData) {
@@ -425,7 +438,13 @@ func (s *server) devicesPage(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: devs, Network: network})
+	machines, err := s.Store.Machines(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: groupRows(devs, machines), Network: network,
+		CanEdit: s.canEdit()})
 }
 
 func (s *server) eventsPage(w http.ResponseWriter, r *http.Request) {

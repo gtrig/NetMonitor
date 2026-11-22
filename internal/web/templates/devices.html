@@ -8,27 +8,30 @@
     </select>
     <input type="search" id="q" placeholder="Filter by name, IP, MAC, vendor…" aria-label="Filter devices">
     <label class="check"><input type="checkbox" id="onlyUnknown"> unreviewed only</label>
+    <button class="btn" id="mergeSel" type="button" disabled title="Select two or more rows that are the same machine">Merge selected into one machine</button>
   </form>
 </div>
 <div class="table-wrap">
 <table id="devices">
-  <thead><tr><th></th><th>Name</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Port</th><th>Network</th><th>Last seen</th><th>Sources</th><th>Known</th></tr></thead>
+  <thead><tr><th><span class="sr-only">Select</span></th><th></th><th>Name</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Port</th><th>Network</th><th>Last seen</th><th>Sources</th><th>Known</th><th></th></tr></thead>
   <tbody>
   {{range .Devices}}
-  <tr data-key="{{.Key}}" data-known="{{.Known}}">
+  <tr data-key="{{.Key}}" data-network="{{.Network}}" data-known="{{.Known}}" {{if .Machine}}class="in-machine" data-machine="{{.Machine}}"{{end}}>
+    <td><input type="checkbox" class="sel" aria-label="Select device"></td>
     <td><span class="pill {{if .Online}}ok{{else}}idle{{end}}" title="{{if .Online}}online{{else}}offline{{end}}"></span></td>
     <td><input class="label" value="{{.Label}}" placeholder="{{if .Hostname}}{{.Hostname}}{{else}}add a label{{end}}" aria-label="Label"></td>
     <td class="mono">{{if .IP.IsValid}}{{.IP}}{{end}}</td>
     <td class="mono">{{.MAC}}</td>
     <td>{{.Vendor}}</td>
     <td class="mono">{{.Port}}</td>
-    <td>{{.Network}}</td>
+    <td>{{.Network}}{{if .Machine}} <span class="tag machine" title="Grouped with other rows as one machine">machine {{.Machine}}</span> <button class="btn small split" type="button">Split</button>{{end}}</td>
     <td title="first seen {{ts .FirstSeen}}">{{ago .LastSeen}}</td>
     <td class="muted small">{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
     <td><input type="checkbox" class="known" {{if .Known}}checked{{end}} aria-label="Mark as known"></td>
+    <td><button class="btn small danger forget" type="button" title="Remove this device; it comes back if seen again">Forget</button></td>
   </tr>
   {{else}}
-  <tr><td colspan="10" class="muted">No devices yet.</td></tr>
+  <tr><td colspan="12" class="muted">No devices yet.</td></tr>
   {{end}}
   </tbody>
 </table>

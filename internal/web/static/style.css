@@ -130,3 +130,6 @@ input.label:hover, input.label:focus { border-color: var(--border); background: 
 .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .checks .check { display: flex; gap: 4px; align-items: center; }
 @media (max-width: 600px) { .source-row { grid-template-columns: 1fr 1fr; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tag.machine { color: var(--router); border-color: var(--router); }
+tr.in-machine td:first-child { box-shadow: inset 3px 0 0 var(--router); }

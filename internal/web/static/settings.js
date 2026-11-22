@@ -244,7 +244,7 @@
   saveBtn.addEventListener("click", async () => {
     saveBtn.disabled = true; saveBtn.textContent = "Saving…";
     const res = await fetch(url("/api/settings"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
-    if (res.status === 204) { showErrors([]); toast("Saved and applied"); dirty = false; return load(); }
+    if (res.status === 204) { showErrors([]); toast("Saved and applied"); dirty = false; return load().then(loadStale); }
     let errs = [res.statusText];
     try { errs = (await res.json()).errors; } catch { errs = [await res.text().catch(() => res.statusText)]; }
     showErrors(errs); saveBtn.disabled = false; saveBtn.textContent = "Save changes";
@@ -258,5 +258,48 @@
     showErrors(errs);
   });
 
-  load();
+  // ---- stored data of networks no longer in the config ----
+  const staleEl = document.createElement("section");
+  staleEl.className = "set-section";
+  staleEl.hidden = true;
+  root.insertAdjacentElement("afterend", staleEl);
+
+  async function loadStale() {
+    let data;
+    try { data = await api("GET", "/api/data/networks"); } catch { return; }
+    const stale = data.filter((n) => !n.configured && n.devices > 0);
+    const targets = data.filter((n) => n.configured).map((n) => n.name);
+    staleEl.hidden = !stale.length;
+    staleEl.innerHTML = `<div class="set-head"><h2>Stored data from removed networks</h2></div>
+      <p class="muted small">Devices kept under network names that are no longer configured (for example after a rename). Merge them into a configured network, or delete them. Events are kept either way.</p>
+      <div class="items">${stale.map((n) => `<article class="item"><div class="item-head"><b>${esc(n.name)}</b>
+        <span class="muted small">${n.devices} devices · ${n.events} events</span></div>
+        ${meta.can_edit ? `<div class="grid">
+          <label class="field"><span>Merge into</span><select data-stale-into="${esc(n.name)}">${targets.map((t) => `<option>${esc(t)}</option>`).join("")}</select></label>
+          <button class="btn" type="button" data-stale-merge="${esc(n.name)}" ${targets.length ? "" : "disabled"}>Merge</button>
+          <button class="btn danger" type="button" data-stale-delete="${esc(n.name)}">Delete</button></div>` : ""}
+      </article>`).join("")}</div>`;
+  }
+
+  staleEl.addEventListener("click", async (e) => {
+    const t = e.target;
+    const path = (n) => "/api/data/networks/" + encodeURIComponent(n);
+    try {
+      if (t.dataset.staleMerge) {
+        const name = t.dataset.staleMerge;
+        const into = staleEl.querySelector(`[data-stale-into="${CSS.escape(name)}"]`).value;
+        if (!confirm(`Move the devices and events of ${name} into ${into}?`)) return;
+        await api("POST", path(name) + "/merge", { into });
+        toast(`Merged ${name} into ${into}`);
+      } else if (t.dataset.staleDelete) {
+        const name = t.dataset.staleDelete;
+        if (!confirm(`Delete the stored devices of ${name}? This cannot be undone (events are kept).`)) return;
+        await api("DELETE", path(name));
+        toast(`Deleted stored data of ${name}`);
+      } else return;
+      loadStale();
+    } catch (err) { toast("Failed: " + err.message); }
+  });
+
+  load().then(loadStale);
 })();

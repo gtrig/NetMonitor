@@ -69,6 +69,32 @@ if (table) {
       row.hidden = !show;
     }
   };
+  const mergeBtn = document.getElementById("mergeSel");
+  const selected = () => [...table.querySelectorAll("tr[data-key] input.sel:checked")].map((c) => c.closest("tr"));
+  table.addEventListener("change", (e) => {
+    if (e.target.classList.contains("sel")) mergeBtn.disabled = selected().length < 2;
+  });
+  mergeBtn.addEventListener("click", async () => {
+    const members = selected().map((r) => ({ network: r.dataset.network, key: r.dataset.key }));
+    try { await api("POST", "/api/machines", { members }); location.reload(); }
+    catch (err) { toast("Merge failed: " + err.message); }
+  });
+  table.addEventListener("click", async (e) => {
+    const row = e.target.closest("tr[data-key]");
+    if (!row) return;
+    const ref = { network: row.dataset.network, key: row.dataset.key };
+    try {
+      if (e.target.classList.contains("split")) {
+        await api("POST", "/api/machines/split", ref);
+        location.reload();
+      } else if (e.target.classList.contains("forget")) {
+        if (!confirm(`Forget ${row.dataset.key} in ${row.dataset.network}? It comes back if a scan sees it again.`)) return;
+        await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));
+        row.remove();
+        toast("Device forgotten");
+      }
+    } catch (err) { toast("Failed: " + err.message); }
+  });
   q.addEventListener("input", apply);
   only.addEventListener("change", apply);
 }
