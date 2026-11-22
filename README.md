@@ -9,6 +9,7 @@ Each network can use any mix of discovery sources, each on its own interval:
 | `router` | MikroTik RouterOS API (polled, read-only) | ARP table, DHCP hostnames, bridge port per device, router↔router links (`/ip/neighbor`) |
 | `snmp`   | SNMP v2c/v3                               | ARP table, bridge forwarding table (MAC → port), LLDP neighbors |
 | `nmap`   | `nmap -sn` host discovery (never port-scans) | Live hosts, MAC + vendor on directly attached networks |
+| `services` | `nmap -sV -O` of the hosts that are online (slow; default every 6h) | Open TCP ports, service versions, OS guess (inventory only: no alerts) |
 
 Detected changes: `device_new`, `device_offline`, `device_back_online`, `ip_changed`, `hostname_changed`, `mac_changed_for_ip` (possible spoofing), and a single `baseline` summary the first time a source sees a network.
 
@@ -47,6 +48,12 @@ The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_G
 - **Renames keep data.** Renaming a network on the Settings page moves its devices and history to the new name.
 - **Cleanup.** Data under network names that are no longer configured is listed on the Settings page: **Merge into** a configured network, or **Delete** it (events are kept). **Forget** on the Devices page removes a single device; it comes back if it is seen again.
 - **Scan jobs.** The Overview page shows every scan job live: running (with nmap's phase and percentage), queued (waiting for one of 4 slots) or idle (with a countdown to the next run), plus the last duration and error, and **Scan now** per job. Remote networks usually spend most of a scan on reverse DNS; add `-n` to the nmap args to skip it if you don't need names.
+
+## Quick and detailed scans
+
+- **Quick** (`nmap`, `router`, `snmp` sources) answers "who is online" every few minutes and drives offline detection and alerts.
+- **Detailed** (`services` source, one per network, default every `6h`) runs `nmap -sV -O` on the top 1000 TCP ports of the hosts that are currently online and keeps the latest result per device: open ports, service product/version, OS guess. It is inventory only: it never marks devices online/offline and never sends alerts. Extra nmap args are allowed, e.g. `-p 1-65535` or `--version-light`.
+- Results show in the **Services** column on the Devices page and in the device panel on the map. **Scan details** / **Rescan** scans one device right away (also in networks without a services source); it shows on the Overview page while it runs.
 
 ## Configuration
 

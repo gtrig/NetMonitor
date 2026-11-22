@@ -37,7 +37,7 @@
       <td>${esc(j.network)}</td><td class="mono">${esc(j.source)} <span class="muted small">every ${esc(j.interval)}</span></td>
       <td><span class="state state-${esc(state)}">${esc(state)}</span></td>
       <td class="progress-cell">${progress}</td><td>${next}</td><td>${last}</td>
-      <td><button class="btn small" data-job="${j.id}" ${state === "idle" ? "" : "disabled"}>Scan now</button></td></tr>`;
+      <td>${j.id >= 0 ? `<button class="btn small" data-job="${j.id}" ${state === "idle" ? "" : "disabled"}>Scan now</button>` : '<span class="muted small">on demand</span>'}</td></tr>`;
   }
 
   function render() {

@@ -82,6 +82,7 @@
         <dt>Hostname</dt><dd>${esc(d.hostname)}</dd><dt>Port</dt><dd class="mono">${esc(d.port)}</dd>
         <dt>Network</dt><dd>${esc(d.network)}</dd><dt>Last seen</dt><dd>${esc(ago(d.lastSeen))}</dd>
         <dt>First seen</dt><dd>${esc(ago(d.firstSeen))}</dd></dl>${memberList}
+        <div class="details-box"><span class="muted small">Loading services…</span></div>
         <form><input class="label" name="label" placeholder="Label" value="${esc(n.data("userLabel") || "")}" aria-label="Label">
         <label class="check"><input type="checkbox" name="known" ${d.known ? "checked" : ""}> known device</label>
         <button class="btn">Save</button></form>`;
@@ -99,8 +100,40 @@
         } catch (err) { toast("Save failed: " + err.message); }
       });
     }
+    if (d.kind === "device") loadDetails(d);
     panel.querySelector(".close").addEventListener("click", () => { panel.hidden = true; cy.elements().unselect(); });
     panel.hidden = false;
+  }
+
+  // Detailed-scan results (open ports, services, OS) of every address of a device or machine.
+  async function loadDetails(d) {
+    const box = panel.querySelector(".details-box");
+    const members = d.members && d.members.length ? d.members : [{ network: d.network, key: d.key, ip: d.ip }];
+    let all = [];
+    try { all = await api("GET", "/api/details"); } catch { /* shown as none */ }
+    if (!box.isConnected) return;
+    const byRef = new Map(all.map((x) => [x.network + "|" + x.key, x]));
+    box.innerHTML = `<h3 class="sub">Services</h3>` + members.map((m) => {
+      const x = byRef.get(m.network + "|" + m.key);
+      const head = members.length > 1 ? `<div class="small mono">${esc(m.ip)} <span class="muted">${esc(m.network)}</span></div>` : "";
+      const body = !x ? `<div class="muted small">not scanned yet</div>`
+        : (x.os ? `<div class="small">OS: ${esc(x.os)} <span class="muted">(${x.osAccuracy}%)</span></div>` : "") +
+          (x.ports.length ? `<table class="ports"><tbody>${x.ports.map((p) => `<tr><td class="mono">${p.port}/${esc(p.proto)}</td><td>${esc(p.service)}</td><td class="small">${esc(p.product)} ${esc(p.version)}</td></tr>`).join("")}</tbody></table>`
+            : `<div class="muted small">no open ports</div>`) +
+          `<div class="muted small">scanned ${esc(ago(x.scannedAt))}</div>`;
+      return `<div class="member-details">${head}${body}
+        <button class="btn small" type="button" data-scan-member="${esc(m.network)}|${esc(m.key)}">${x ? "Rescan" : "Scan details now"}</button></div>`;
+    }).join("");
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-scan-member]");
+      if (!b) return;
+      const [network, ...rest] = b.dataset.scanMember.split("|");
+      try {
+        await api("POST", "/api/details/scan", { network, key: rest.join("|") });
+        b.disabled = true; b.textContent = "Scanning…";
+        toast("Detailed scan started; progress is on the Overview page");
+      } catch (err) { toast("Scan failed: " + err.message); }
+    });
   }
 
   cy.on("tap", "node", (e) => show(e.target));

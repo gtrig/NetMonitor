@@ -13,7 +13,7 @@
 </div>
 <div class="table-wrap">
 <table id="devices">
-  <thead><tr><th><span class="sr-only">Select</span></th><th></th><th>Name</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Port</th><th>Network</th><th>Last seen</th><th>Sources</th><th>Known</th><th></th></tr></thead>
+  <thead><tr><th><span class="sr-only">Select</span></th><th></th><th>Name</th><th>IP</th><th>MAC</th><th>Vendor</th><th>Port</th><th>Network</th><th>Last seen</th><th>Sources</th><th>Services</th><th>Known</th><th></th></tr></thead>
   <tbody>
   {{range .Devices}}
   <tr data-key="{{.Key}}" data-network="{{.Network}}" data-known="{{.Known}}" {{if .Machine}}class="in-machine" data-machine="{{.Machine}}"{{end}}>
@@ -27,11 +27,16 @@
     <td>{{.Network}}{{if .Machine}} <span class="tag machine" title="Grouped with other rows as one machine">machine {{.Machine}}</span> {{if $.CanEdit}}<button class="btn small split" type="button">Split</button>{{end}}{{end}}</td>
     <td title="first seen {{ts .FirstSeen}}">{{ago .LastSeen}}</td>
     <td class="muted small">{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{end}}</td>
+    <td class="services">{{if .Details}}<details><summary>{{.Services}}</summary>
+      {{if .Details.OS}}<div class="small">OS: {{.Details.OS}} <span class="muted">({{.Details.OSAccuracy}}%)</span></div>{{end}}
+      {{if .Details.Ports}}<table class="ports"><tbody>{{range .Details.Ports}}<tr><td class="mono">{{.Port}}/{{.Proto}}</td><td>{{.Service}}</td><td class="small">{{.Product}} {{.Version}}{{if .Extra}} <span class="muted">({{.Extra}})</span>{{end}}</td></tr>{{end}}</tbody></table>{{end}}
+      <div class="muted small">scanned {{ago .Details.ScannedAt}}</div></details>{{end}}
+      <button class="btn small scan-details" type="button" title="Scan open ports, services and OS of this device now">{{if .Details}}Rescan{{else}}Scan details{{end}}</button></td>
     <td><input type="checkbox" class="known" {{if .Known}}checked{{end}} aria-label="Mark as known"></td>
     <td>{{if $.CanEdit}}<button class="btn small danger forget" type="button" title="Remove this device; it comes back if seen again">Forget</button>{{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="12" class="muted">No devices yet.</td></tr>
+  <tr><td colspan="13" class="muted">No devices yet.</td></tr>
   {{end}}
   </tbody>
 </table>

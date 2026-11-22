@@ -66,10 +66,10 @@
         const p = `networks.${i}.sources.${j}`;
         const refs = s.type === "router" ? routerNames : s.type === "snmp" ? snmpNames : [];
         return `<div class="source-row">
-          ${select(`${p}.type`, "Source", s.type, ["router", "snmp", "nmap"], { restructure: true })}
-          ${s.type === "nmap" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: "-T4" })
+          ${select(`${p}.type`, "Source", s.type, ["router", "snmp", "nmap", "services"], { restructure: true })}
+          ${s.type === "nmap" || s.type === "services" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: s.type === "services" ? "-p 1-65535" : "-T4" })
             : select(`${p}.ref`, s.type === "router" ? "Router" : "SNMP target", s.ref || "", ["", ...refs], { empty: "choose…" })}
-          ${text(`${p}.interval`, "Every", s.interval, { ph: "5m" })}
+          ${text(`${p}.interval`, "Every", s.interval, { ph: s.type === "services" ? "6h" : "5m" })}
           ${s.type === "nmap" ? check(`${p}.traceroute`, "Traceroute", s.traceroute) : ""}
           ${meta.can_edit ? `<button class="btn small danger" data-del-source="${i}" data-j="${j}" type="button" aria-label="Remove source">×</button>` : ""}
         </div>`;
@@ -150,7 +150,7 @@
 
   function render() {
     root.innerHTML =
-      section("Networks", "networks", "Network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored.") +
+      section("Networks", "networks", "Network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored. nmap finds who is online; services runs a slow detailed scan (open ports, service versions, OS) of the hosts that are online.") +
       section("Routers", "routers", "Router", renderRouters(), "Use a read-only RouterOS API user. Secrets can be written as ${NAME} to keep them in .env.") +
       section("SNMP targets", "snmp_targets", "SNMP target", renderSNMP()) +
       section("Notification channels", "channels", "Channel", renderChannels(), "Save before sending a test to a new or changed channel.") +
@@ -210,6 +210,7 @@
     if (path.endsWith(".type") && path.includes(".sources.")) {
       setPath(path.replace(/type$/, "ref"), "");
       if (v !== "nmap") setPath(path.replace(/type$/, "traceroute"), false);
+      if (v !== "nmap" && v !== "services") setPath(path.replace(/type$/, "args"), []);
     }
     setPath(path, v);
     markDirty();

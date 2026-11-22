@@ -3,27 +3,37 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
+	"github.com/gtrig/netmon/internal/scheduler"
 	"github.com/gtrig/netmon/internal/store"
 )
 
 // deviceRow is a device with its machine id (0 = not grouped) for the devices page.
 type deviceRow struct {
 	model.Device
-	Machine int64
+	Machine  int64
+	Details  *model.DeviceDetails
+	Services string
 }
 
 // groupRows attaches machine ids and moves the members of each machine right after its first member.
-func groupRows(devs []model.Device, machines map[model.MemberRef]int64) []deviceRow {
+func groupRows(devs []model.Device, machines map[model.MemberRef]int64, details map[model.MemberRef]model.DeviceDetails) []deviceRow {
 	rows := make([]deviceRow, 0, len(devs))
 	byMachine := map[int64][]deviceRow{}
 	var order []any // deviceRow or machine id
 	for _, d := range devs {
-		r := deviceRow{Device: d, Machine: machines[model.MemberRef{Network: d.Network, Key: d.Key}]}
+		ref := model.MemberRef{Network: d.Network, Key: d.Key}
+		r := deviceRow{Device: d, Machine: machines[ref]}
+		if dd, ok := details[ref]; ok {
+			r.Details = &dd
+			r.Services = servicesSummary(&dd)
+		}
 		if r.Machine == 0 {
 			order = append(order, r)
 			continue
@@ -164,4 +174,50 @@ func (s *server) apiSplitMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) apiDetails(w http.ResponseWriter, r *http.Request) {
+	ds, err := s.Store.Details(r.Context(), r.URL.Query().Get("network"))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	out := make([]model.DeviceDetails, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, d)
+	}
+	writeJSON(w, out)
+}
+
+func (s *server) apiScanDetails(w http.ResponseWriter, r *http.Request) {
+	var ref model.MemberRef
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := json.NewDecoder(r.Body).Decode(&ref); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	err := s.rt().Scheduler.ScanDevice(ref.Network, ref.Key)
+	switch {
+	case errors.Is(err, scheduler.ErrUnknownDevice):
+		http.Error(w, "device not found", http.StatusNotFound)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	default:
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+// servicesSummary is a short "22 ssh, 80 http" line for the devices table.
+func servicesSummary(d *model.DeviceDetails) string {
+	if d == nil {
+		return ""
+	}
+	if len(d.Ports) == 0 {
+		return "no open ports"
+	}
+	parts := make([]string, 0, len(d.Ports))
+	for _, p := range d.Ports {
+		parts = append(parts, strings.TrimSpace(fmt.Sprintf("%d %s", p.Port, p.Service)))
+	}
+	return strings.Join(parts, ", ")
 }

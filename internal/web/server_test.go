@@ -34,6 +34,13 @@ func (f *fakeSched) ScanJob(id int) error {
 	f.scanned = append(f.scanned, "job0")
 	return nil
 }
+func (f *fakeSched) ScanDevice(network, key string) error {
+	if key != "mac:aa:00:00:00:00:01" {
+		return scheduler.ErrUnknownDevice
+	}
+	f.scanned = append(f.scanned, network+"|"+key)
+	return nil
+}
 func (f *fakeSched) Status() []scheduler.JobStatus {
 	return []scheduler.JobStatus{{Network: "lan", Source: "nmap"}}
 }
@@ -205,5 +212,24 @@ func TestJobsAPI(t *testing.T) {
 		if rr := do(h, "POST", "/api/jobs/"+id+"/scan", "", true); rr.Code != 404 {
 			t.Fatalf("job %s: %d", id, rr.Code)
 		}
+	}
+}
+
+func TestDetailsAPI(t *testing.T) {
+	h, st, fs := newTest(t, creds)
+	st.SaveDetails(context.Background(), []model.DeviceDetails{{Network: "lan", Key: "mac:aa:00:00:00:00:01", ScannedAt: time.Now(),
+		OS: "Linux", Ports: []model.Port{{Proto: "tcp", Port: 22, State: "open", Service: "ssh", Product: "OpenSSH"}}}})
+	rr := do(h, "GET", "/api/details?network=lan", "", true)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"product":"OpenSSH"`) {
+		t.Fatalf("%d %s", rr.Code, rr.Body)
+	}
+	if rr := do(h, "POST", "/api/details/scan", `{"network":"lan","key":"mac:aa:00:00:00:00:01"}`, true); rr.Code != 202 || len(fs.scanned) != 1 {
+		t.Fatalf("scan: %d %v", rr.Code, fs.scanned)
+	}
+	if rr := do(h, "POST", "/api/details/scan", `{"network":"lan","key":"nope"}`, true); rr.Code != 404 {
+		t.Fatalf("unknown: %d", rr.Code)
+	}
+	if rr := do(h, "GET", "/devices", "", true); !strings.Contains(rr.Body.String(), "22 ssh") {
+		t.Fatalf("devices page lacks services summary")
 	}
 }

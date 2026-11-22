@@ -36,6 +36,7 @@ type Runtime struct {
 	Scheduler interface {
 		ScanNow(network string) error
 		ScanJob(id int) error
+		ScanDevice(network, key string) error
 		Status() []scheduler.JobStatus
 	}
 	Notifier interface {
@@ -114,6 +115,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/data/networks/{name}", s.apiDeleteNetworkData)
 	mux.HandleFunc("POST /api/scan/{network}", s.apiScan)
 	mux.HandleFunc("GET /api/jobs", s.apiJobs)
+	mux.HandleFunc("GET /api/details", s.apiDetails)
+	mux.HandleFunc("POST /api/details/scan", s.apiScanDetails)
 	mux.HandleFunc("POST /api/jobs/{id}/scan", s.apiScanJob)
 	mux.HandleFunc("POST /api/notify/test/{channel}", s.apiNotifyTest)
 	mux.HandleFunc("GET /settings", s.page("settings", "Settings"))
@@ -491,7 +494,12 @@ func (s *server) devicesPage(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: groupRows(devs, machines), Network: network,
+	details, err := s.Store.Details(r.Context(), network)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: groupRows(devs, machines, details), Network: network,
 		CanEdit: s.canEdit()})
 }
 

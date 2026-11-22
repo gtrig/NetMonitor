@@ -177,6 +177,7 @@ func (a *App) start(eff *config.Config) (*Runtime, error) {
 	d.Start(ctx)
 	jobs, gateways := a.opts.Build(eff)
 	sched := scheduler.New(st, d, a.opts.OUI, a.opts.Resolver, jobs)
+	sched.DefaultDetails = nmap.NewServices(nil, nil)
 	rt := &Runtime{Config: eff, Scheduler: sched, Dispatcher: d, Gateways: gateways, cancel: cancel, done: make(chan struct{})}
 	go func() { sched.Run(ctx); close(rt.done) }()
 	return rt, nil
@@ -236,6 +237,9 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 				src = targets[ref.Ref]
 			case "nmap":
 				src = nmap.New(ref.Args, ref.Traceroute, nil)
+			case "services":
+				jobs = append(jobs, scheduler.Job{Network: n, Details: nmap.NewServices(ref.Args, nil), Interval: ref.Interval.Duration})
+				continue
 			}
 			jobs = append(jobs, scheduler.Job{Network: n, Source: src, Interval: ref.Interval.Duration, OfflineAfter: n.OfflineAfterFor(ref)})
 		}

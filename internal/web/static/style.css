@@ -146,3 +146,8 @@ tr.in-machine td:first-child { box-shadow: inset 3px 0 0 var(--router); }
 .lg-hop { background: var(--idle); transform: rotate(45deg) scale(.8); border-radius: 1px !important; }
 table.members { width: 100%; font-size: 12px; margin-top: 4px; }
 table.members td { padding: 2px 4px; }
+td.services { max-width: 340px; }
+td.services summary { cursor: pointer; font-size: 12px; }
+table.ports { font-size: 12px; margin: 4px 0; }
+table.ports td { padding: 1px 6px 1px 0; }
+.member-details { margin: 6px 0 10px; }

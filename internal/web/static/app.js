@@ -84,7 +84,12 @@ if (table) {
     if (!row) return;
     const ref = { network: row.dataset.network, key: row.dataset.key };
     try {
-      if (e.target.classList.contains("split")) {
+      if (e.target.classList.contains("scan-details")) {
+        await api("POST", "/api/details/scan", ref);
+        e.target.disabled = true;
+        e.target.textContent = "Scanning…";
+        toast("Detailed scan started; see the Overview page for progress. Reload when it is done.");
+      } else if (e.target.classList.contains("split")) {
         await api("POST", "/api/machines/split", ref);
         location.reload();
       } else if (e.target.classList.contains("forget")) {
