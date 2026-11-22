@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -130,4 +131,13 @@ networks:
 	if c.Routers[0].Password != `a #b: c "d"` || c.Routers[1].Password != "pa$$w0rd" {
 		t.Fatalf("passwords = %q, %q", c.Routers[0].Password, c.Routers[1].Password)
 	}
+}
+
+func mustPrefix(t *testing.T, s string) netip.Prefix {
+	t.Helper()
+	p, err := netip.ParsePrefix(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

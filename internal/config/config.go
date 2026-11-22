@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -24,80 +26,150 @@ const (
 )
 
 type Config struct {
-	Listen      string       `yaml:"listen"`
-	DataDir     string       `yaml:"data_dir"`
-	OUIPath     string       `yaml:"oui_path"`
-	Auth        *BasicAuth   `yaml:"auth"`
-	Routers     []Router     `yaml:"routers"`
-	SNMPTargets []SNMPTarget `yaml:"snmp_targets"`
-	Networks    []Network    `yaml:"networks"`
-	Channels    []Channel    `yaml:"channels"`
-	Rules       []Rule       `yaml:"rules"`
+	Listen      string       `yaml:"listen,omitempty" json:"listen,omitempty"`
+	DataDir     string       `yaml:"data_dir,omitempty" json:"data_dir,omitempty"`
+	OUIPath     string       `yaml:"oui_path,omitempty" json:"oui_path,omitempty"`
+	Auth        *BasicAuth   `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Routers     []Router     `yaml:"routers,omitempty" json:"routers,omitempty"`
+	SNMPTargets []SNMPTarget `yaml:"snmp_targets,omitempty" json:"snmp_targets,omitempty"`
+	Networks    []Network    `yaml:"networks,omitempty" json:"networks,omitempty"`
+	Channels    []Channel    `yaml:"channels,omitempty" json:"channels,omitempty"`
+	Rules       []Rule       `yaml:"rules,omitempty" json:"rules,omitempty"`
 }
 
 type BasicAuth struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 }
 
 type Router struct {
-	Name               string `yaml:"name"`
-	Type               string `yaml:"type"`
-	Address            string `yaml:"address"`
-	Username           string `yaml:"username"`
-	Password           string `yaml:"password"`
-	TLS                bool   `yaml:"tls"`
-	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	// OriginalName is set by the settings UI so renamed items keep their secrets; never saved.
+	OriginalName       string `yaml:"-" json:"original_name,omitempty"`
+	Name               string `yaml:"name,omitempty" json:"name,omitempty"`
+	Type               string `yaml:"type,omitempty" json:"type,omitempty"`
+	Address            string `yaml:"address,omitempty" json:"address,omitempty"`
+	Username           string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password           string `yaml:"password,omitempty" json:"password,omitempty"`
+	TLS                bool   `yaml:"tls,omitempty" json:"tls,omitempty"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify,omitempty" json:"insecure_skip_verify,omitempty"`
 }
 
 type SNMPTarget struct {
-	Name      string `yaml:"name"`
-	Address   string `yaml:"address"`
-	Port      int    `yaml:"port"`
-	Version   string `yaml:"version"`
-	Community string `yaml:"community"`
-	Username  string `yaml:"username"`
-	AuthProto string `yaml:"auth_proto"`
-	AuthPass  string `yaml:"auth_pass"`
-	PrivProto string `yaml:"priv_proto"`
-	PrivPass  string `yaml:"priv_pass"`
+	// OriginalName is set by the settings UI so renamed items keep their secrets; never saved.
+	OriginalName string `yaml:"-" json:"original_name,omitempty"`
+	Name         string `yaml:"name,omitempty" json:"name,omitempty"`
+	Address      string `yaml:"address,omitempty" json:"address,omitempty"`
+	Port         int    `yaml:"port,omitempty" json:"port,omitempty"`
+	Version      string `yaml:"version,omitempty" json:"version,omitempty"`
+	Community    string `yaml:"community,omitempty" json:"community,omitempty"`
+	Username     string `yaml:"username,omitempty" json:"username,omitempty"`
+	AuthProto    string `yaml:"auth_proto,omitempty" json:"auth_proto,omitempty"`
+	AuthPass     string `yaml:"auth_pass,omitempty" json:"auth_pass,omitempty"`
+	PrivProto    string `yaml:"priv_proto,omitempty" json:"priv_proto,omitempty"`
+	PrivPass     string `yaml:"priv_pass,omitempty" json:"priv_pass,omitempty"`
 }
 
 type Network struct {
-	Name         string       `yaml:"name"`
-	CIDR         netip.Prefix `yaml:"cidr"`
-	Sources      []SourceRef  `yaml:"sources"`
-	Exclude      []netip.Addr `yaml:"exclude"`
-	OfflineAfter Duration     `yaml:"offline_after"`
+	Name         string       `yaml:"name,omitempty" json:"name,omitempty"`
+	CIDR         netip.Prefix `yaml:"cidr" json:"cidr"`
+	Sources      []SourceRef  `yaml:"sources,omitempty" json:"sources,omitempty"`
+	Exclude      []netip.Addr `yaml:"exclude,omitempty" json:"exclude,omitempty"`
+	OfflineAfter Duration     `yaml:"offline_after,omitempty" json:"offline_after,omitempty"`
 }
 
 type SourceRef struct {
-	Type     string   `yaml:"type"`
-	Ref      string   `yaml:"ref"`
-	Interval Duration `yaml:"interval"`
-	Args     []string `yaml:"args"`
+	Type     string   `yaml:"type,omitempty" json:"type,omitempty"`
+	Ref      string   `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Interval Duration `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Args     []string `yaml:"args,omitempty" json:"args,omitempty"`
 }
 
 type Channel struct {
-	Name       string   `yaml:"name"`
-	Type       string   `yaml:"type"`
-	BotToken   string   `yaml:"bot_token"`
-	ChatID     string   `yaml:"chat_id"`
-	WebhookURL string   `yaml:"webhook_url"`
-	SMTPHost   string   `yaml:"smtp_host"`
-	SMTPPort   int      `yaml:"smtp_port"`
-	Username   string   `yaml:"username"`
-	Password   string   `yaml:"password"`
-	From       string   `yaml:"from"`
-	To         []string `yaml:"to"`
-	StartTLS   bool     `yaml:"starttls"`
+	// OriginalName is set by the settings UI so renamed items keep their secrets; never saved.
+	OriginalName string   `yaml:"-" json:"original_name,omitempty"`
+	Name         string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Type         string   `yaml:"type,omitempty" json:"type,omitempty"`
+	BotToken     string   `yaml:"bot_token,omitempty" json:"bot_token,omitempty"`
+	ChatID       string   `yaml:"chat_id,omitempty" json:"chat_id,omitempty"`
+	WebhookURL   string   `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	SMTPHost     string   `yaml:"smtp_host,omitempty" json:"smtp_host,omitempty"`
+	SMTPPort     int      `yaml:"smtp_port,omitempty" json:"smtp_port,omitempty"`
+	Username     string   `yaml:"username,omitempty" json:"username,omitempty"`
+	Password     string   `yaml:"password,omitempty" json:"password,omitempty"`
+	From         string   `yaml:"from,omitempty" json:"from,omitempty"`
+	To           []string `yaml:"to,omitempty" json:"to,omitempty"`
+	StartTLS     bool     `yaml:"starttls,omitempty" json:"starttls,omitempty"`
 }
 
 type Rule struct {
-	Events      []string `yaml:"events"`
-	Networks    []string `yaml:"networks"`
-	Channels    []string `yaml:"channels"`
-	OnlyUnknown bool     `yaml:"only_unknown"`
+	Events      []string `yaml:"events,omitempty" json:"events,omitempty"`
+	Networks    []string `yaml:"networks,omitempty" json:"networks,omitempty"`
+	Channels    []string `yaml:"channels,omitempty" json:"channels,omitempty"`
+	OnlyUnknown bool     `yaml:"only_unknown,omitempty" json:"only_unknown,omitempty"`
+}
+
+// LoadRaw reads the file at path without expanding ${VAR} references or applying defaults.
+// It is the form the settings UI edits and writes back.
+func LoadRaw(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	var c Config
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&c); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &c, nil
+}
+
+// Effective returns the expanded, defaulted and validated config for raw, leaving raw untouched.
+func Effective(raw *Config) (*Config, error) {
+	data, err := yaml.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	return Parse(data)
+}
+
+const savedHeader = "# netmon configuration. Managed by the netmon settings page; hand edits are fine too\n" +
+	"# (apply them with \"Reload from file\" or a restart). ${VAR} references come from .env.\n"
+
+// Save writes raw to path atomically (temp file + rename), keeping the file's permissions.
+func Save(path string, raw *Config) error {
+	var buf bytes.Buffer
+	buf.WriteString(savedHeader)
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(raw); err != nil {
+		return err
+	}
+	enc.Close()
+	mode := os.FileMode(0o640)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.yaml")
+	if err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(buf.Bytes()); err != nil {
+		tmp.Close()
+		return fmt.Errorf("save config: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return fmt.Errorf("save config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	return nil
 }
 
 // Load reads the file at path, expands ${VAR} references, and parses it.
