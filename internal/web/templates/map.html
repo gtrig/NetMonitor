@@ -3,11 +3,11 @@
   <h1>Network map</h1>
   <label>Network
     <select id="net">
-      <option value="">All</option>
+      <option value="">All networks</option>
       {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </label>
-  <span class="legend"><i class="lg-router"></i>router <i class="lg-online"></i>online <i class="lg-unknown"></i>unreviewed <i class="lg-offline"></i>offline</span>
+  <span class="legend"><i class="lg-router"></i>router <i class="lg-hop"></i>hop <i class="lg-online"></i>online <i class="lg-unknown"></i>unreviewed <i class="lg-offline"></i>offline</span>
   <button class="btn" id="relayout">Re-layout</button>
 </div>
 <div class="map-wrap">

@@ -18,6 +18,19 @@
       { selector: "node[kind = 'router']", style: {
         "shape": "round-rectangle", "width": 34, "height": 24, "background-color": v("--router"),
         "font-weight": "bold", "font-size": 12 } },
+      { selector: "node[?router]", style: {
+        "shape": "round-rectangle", "width": 30, "height": 22, "border-color": v("--router"), "border-width": 3, "font-weight": "bold" } },
+      { selector: "node[kind = 'hop']", style: {
+        "shape": "diamond", "width": 14, "height": 14, "background-color": v("--idle"), "font-size": 9, "color": v("--muted") } },
+      { selector: "node[kind = 'net']", style: {
+        "shape": "round-rectangle", "background-color": v("--accent"), "background-opacity": 0.05,
+        "border-width": 1.5, "border-style": "dashed", "border-color": v("--accent"),
+        "label": "data(label)", "text-valign": "top", "text-halign": "center", "text-margin-y": -4,
+        "font-size": 13, "font-weight": "bold", "color": v("--accent"), "padding": 18,
+        "text-background-opacity": 0 } },
+      { selector: "edge[kind = 'member']", style: {
+        "line-style": "dashed", "line-color": v("--router"), "width": 1.5, "target-arrow-shape": "none" } },
+      { selector: "edge[source ^= 'hop:'], edge[target ^= 'hop:']", style: { "width": 2, "line-color": v("--router") } },
       { selector: "node[kind = 'network']", style: {
         "shape": "round-rectangle", "width": 30, "height": 20, "background-color": v("--muted") } },
       { selector: "edge", style: {
@@ -30,7 +43,8 @@
   });
 
   const layout = () => cy.layout({ name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70,
-    nodeDimensionsIncludeLabels: true, randomize: true }).run();
+    nodeDimensionsIncludeLabels: true, randomize: true, nestingFactor: 0.8, gravity: 0.6, numIter: 2500,
+    componentSpacing: 80 }).run();
 
   async function load() {
     const q = netSel.value ? "?network=" + encodeURIComponent(netSel.value) : "";
@@ -49,16 +63,25 @@
 
   function show(n) {
     const d = n.data();
-    if (d.kind !== "device") {
-      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2><p class="muted">${esc(d.kind)} · ${n.degree()} links</p>`;
+    if (d.kind === "net") {
+      const kids = n.children();
+      const on = kids.filter((c) => c.data("status") === "online").length;
+      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2>
+        <p class="muted">${kids.length} nodes · ${on} online</p>
+        <p><a href="/map?network=${encodeURIComponent(d.network)}">Only this network →</a></p>`;
+    } else if (d.kind !== "device") {
+      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2><p class="muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>`;
     } else {
+      const members = d.members || [];
+      const memberList = members.length > 1 ? `<h3 class="sub">Addresses</h3><table class="members"><tbody>${members.map((m) =>
+        `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono small">${esc(m.mac)}</td><td><span class="pill ${m.online ? "ok" : "idle"}"></span></td></tr>`).join("")}</tbody></table>` : "";
       panel.innerHTML = `<button class="btn small close">×</button>
         <h2>${esc(d.label)}</h2>
         <dl><dt>Status</dt><dd>${esc(d.status)}</dd><dt>IP</dt><dd class="mono">${esc(d.ip)}</dd>
         <dt>MAC</dt><dd class="mono">${esc(d.mac)}</dd><dt>Vendor</dt><dd>${esc(d.vendor)}</dd>
         <dt>Hostname</dt><dd>${esc(d.hostname)}</dd><dt>Port</dt><dd class="mono">${esc(d.port)}</dd>
         <dt>Network</dt><dd>${esc(d.network)}</dd><dt>Last seen</dt><dd>${esc(ago(d.lastSeen))}</dd>
-        <dt>First seen</dt><dd>${esc(ago(d.firstSeen))}</dd></dl>
+        <dt>First seen</dt><dd>${esc(ago(d.firstSeen))}</dd></dl>${memberList}
         <form><input class="label" name="label" placeholder="Label" value="${esc(n.data("userLabel") || "")}" aria-label="Label">
         <label class="check"><input type="checkbox" name="known" ${d.known ? "checked" : ""}> known device</label>
         <button class="btn">Save</button></form>`;
@@ -68,7 +91,8 @@
         try {
           const fields = { known: f.known.checked };
           if (f.label.value.trim()) fields.label = f.label.value.trim();
-          await patchDevice(d.key, fields);
+          const keys = [...new Set((d.members && d.members.length ? d.members : [{ key: d.key }]).map((m) => m.key))];
+          for (const k of keys) await patchDevice(k, fields);
           n.data("known", f.known.checked);
           if (fields.label) n.data("label", fields.label);
           toast("Saved");

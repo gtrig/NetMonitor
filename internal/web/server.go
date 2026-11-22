@@ -283,7 +283,18 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	els := topology.Build(devs, links, s.rt().Gateways)
+	machines, err := s.Store.Machines(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	rt := s.rt()
+	var nets []topology.NetInfo
+	for _, n := range rt.Config.Networks {
+		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR})
+	}
+	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines,
+		Networks: nets, Compound: network == "" && len(nets) > 1})
 	if els == nil {
 		els = []topology.Element{}
 	}

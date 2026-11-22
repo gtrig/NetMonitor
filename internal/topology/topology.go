@@ -2,9 +2,12 @@
 package topology
 
 import (
+	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gtrig/netmon/internal/model"
 )
@@ -15,68 +18,140 @@ type Element struct {
 	Data  map[string]any `json:"data"`
 }
 
-func nodeID(r model.NodeRef) string { return r.Kind + ":" + r.ID }
+// NetInfo is a configured network.
+type NetInfo struct {
+	Name string
+	CIDR netip.Prefix
+}
 
-// Build returns nodes and edges for devices and links. gateways maps a network name to the
-// router ID that devices without any link attach to; without one a "network:<name>" node is used.
-func Build(devices []model.Device, links []model.Link, gateways map[string]string) []Element {
-	byKey := map[string]model.Device{}
-	byIP := map[netip.Addr]string{}
-	for _, d := range devices {
-		byKey[d.Key] = d
-		if d.IP.IsValid() {
-			if _, taken := byIP[d.IP]; !taken || d.MAC != "" {
-				byIP[d.IP] = d.Key
-			}
+// Input is everything the map is built from.
+type Input struct {
+	Devices []model.Device
+	Links   []model.Link
+	// Gateways maps a network to the router ID that devices without any link attach to
+	// (non-compound mode); without one a "network:<name>" node is used.
+	Gateways map[string]string
+	// Machines groups device rows into one node.
+	Machines map[model.MemberRef]int64
+	Networks []NetInfo
+	// Compound draws each network as a box holding its nodes; nodes in several networks sit
+	// outside the boxes with a "member" edge to each.
+	Compound bool
+}
+
+// group is one device node: a single device row, the rows sharing a key, or a machine.
+type group struct {
+	id      string
+	members []model.Device
+	router  bool
+}
+
+func (g *group) networks() []string {
+	var out []string
+	for _, d := range g.members {
+		if !slices.Contains(out, d.Network) {
+			out = append(out, d.Network)
 		}
 	}
-	// resolve maps link endpoints onto known devices; ok=false drops the endpoint.
-	resolve := func(r model.NodeRef) (model.NodeRef, bool) {
-		if r.Kind != "device" {
-			return r, r.ID != ""
+	return out
+}
+
+func isRouterID(id string) bool {
+	return strings.HasPrefix(id, "router:") || strings.HasPrefix(id, "hop:")
+}
+
+// Build returns nodes and edges for the input.
+func Build(in Input) []Element {
+	groups := map[string]*group{}
+	var order []string
+	keyNode := map[string]string{}
+	ipNode := map[netip.Addr]string{}
+	ipHasMAC := map[netip.Addr]bool{}
+	for _, d := range in.Devices {
+		id := "device:" + d.Key
+		if m := in.Machines[model.MemberRef{Network: d.Network, Key: d.Key}]; m != 0 {
+			id = fmt.Sprintf("machine:%d", m)
 		}
-		if _, ok := byKey[r.ID]; ok {
-			return r, true
+		g := groups[id]
+		if g == nil {
+			g = &group{id: id}
+			groups[id] = g
+			order = append(order, id)
 		}
-		if ipStr, ok := strings.CutPrefix(r.ID, "ip:"); ok {
-			if ip, err := netip.ParseAddr(ipStr); err == nil {
-				if k, ok := byIP[ip]; ok {
-					return model.NodeRef{Kind: "device", ID: k}, true
+		g.members = append(g.members, d)
+		if _, ok := keyNode[d.Key]; !ok {
+			keyNode[d.Key] = id
+		}
+		if d.IP.IsValid() && (ipNode[d.IP] == "" || (d.MAC != "" && !ipHasMAC[d.IP])) {
+			ipNode[d.IP] = id
+			ipHasMAC[d.IP] = d.MAC != ""
+		}
+	}
+
+	routers := map[string]bool{} // config-named routers
+	hops := map[string]netip.Addr{}
+	// resolve maps a link endpoint to a node ID; ok=false drops the endpoint.
+	resolve := func(r model.NodeRef) (string, bool) {
+		switch r.Kind {
+		case "router":
+			if ip, err := netip.ParseAddr(r.ID); err == nil {
+				if id, ok := ipNode[ip]; ok {
+					groups[id].router = true
+					return id, true
+				}
+				hops["hop:"+ip.String()] = ip
+				return "hop:" + ip.String(), true
+			}
+			if r.ID == "" {
+				return "", false
+			}
+			routers[r.ID] = true
+			return "router:" + r.ID, true
+		case "device":
+			if id, ok := keyNode[r.ID]; ok {
+				return id, true
+			}
+			if ipStr, ok := strings.CutPrefix(r.ID, "ip:"); ok {
+				if ip, err := netip.ParseAddr(ipStr); err == nil {
+					if id, ok := ipNode[ip]; ok {
+						return id, true
+					}
 				}
 			}
-		}
-		return r, false
-	}
-
-	// Uplink ports: router ports that face another router.
-	uplink := map[string]bool{}
-	for _, l := range links {
-		if l.A.Kind == "router" && l.B.Kind == "router" && l.Label != "" {
-			uplink[nodeID(l.A)+"|"+l.Label] = true
+			return "", false
+		default:
+			return r.Kind + ":" + r.ID, r.ID != ""
 		}
 	}
 
-	type edge struct{ a, b, label string }
-	edgesByPair := map[string]edge{}
-	deviceRouters := map[string][]string{} // device node → pair keys of router→device edges
-	routers := map[string]bool{}
-	for _, l := range links {
+	type edge struct{ a, b, label, kind string }
+	resolved := make([][2]string, len(in.Links))
+	okLink := make([]bool, len(in.Links))
+	for i, l := range in.Links {
 		a, okA := resolve(l.A)
 		b, okB := resolve(l.B)
-		if !okA || !okB || nodeID(a) == nodeID(b) {
+		resolved[i], okLink[i] = [2]string{a, b}, okA && okB && a != b
+	}
+	// Uplink ports: router ports that face another router.
+	uplink := map[string]bool{}
+	for i, l := range in.Links {
+		if okLink[i] && l.Label != "" && isRouterID(resolved[i][0]) && isRouterID(resolved[i][1]) {
+			uplink[resolved[i][0]+"|"+l.Label] = true
+		}
+	}
+
+	edgesByPair := map[string]edge{}
+	deviceRouters := map[string][]string{} // device node → pair keys of router→device edges
+	for i, l := range in.Links {
+		if !okLink[i] {
 			continue
 		}
-		if b.Kind == "router" && a.Kind == "device" {
-			a, b = b, a
+		x, y := resolved[i][0], resolved[i][1]
+		if isRouterID(y) && !isRouterID(x) {
+			x, y = y, x
 		}
-		for _, r := range []model.NodeRef{a, b} {
-			if r.Kind == "router" {
-				routers[r.ID] = true
-			}
-		}
-		x, y := nodeID(a), nodeID(b)
 		pair := x + "|" + y
-		if y < x && a.Kind == b.Kind {
+		if isRouterID(x) == isRouterID(y) && y < x {
 			pair = y + "|" + x
 		}
 		if e, ok := edgesByPair[pair]; ok {
@@ -86,8 +161,8 @@ func Build(devices []model.Device, links []model.Link, gateways map[string]strin
 			}
 			continue
 		}
-		edgesByPair[pair] = edge{a: x, b: y, label: l.Label}
-		if a.Kind == "router" && b.Kind == "device" {
+		edgesByPair[pair] = edge{a: x, b: y, label: l.Label, kind: "link"}
+		if isRouterID(x) && !isRouterID(y) {
 			deviceRouters[y] = append(deviceRouters[y], pair)
 		}
 	}
@@ -96,74 +171,114 @@ func Build(devices []model.Device, links []model.Link, gateways map[string]strin
 		if len(pairs) < 2 {
 			continue
 		}
-		var access []string
+		var access int
 		for _, p := range pairs {
 			e := edgesByPair[p]
 			if !uplink[e.a+"|"+e.label] {
-				access = append(access, p)
+				access++
 			}
 		}
-		if len(access) == 0 {
+		if access == 0 {
 			continue
 		}
 		for _, p := range pairs {
-			e := edgesByPair[p]
-			if uplink[e.a+"|"+e.label] {
+			if e := edgesByPair[p]; uplink[e.a+"|"+e.label] {
 				delete(edgesByPair, p)
 			}
 		}
 	}
 
-	var els []Element
-	linked := map[string]bool{}
-	for _, e := range edgesByPair {
-		linked[e.a], linked[e.b] = true, true
-	}
-	extraNodes := map[string]Element{}
-	for _, d := range devices {
-		id := "device:" + d.Key
-		if linked[id] {
-			continue
+	netOf := func(ip netip.Addr) string {
+		for _, n := range in.Networks {
+			if n.CIDR.Contains(ip) {
+				return n.Name
+			}
 		}
-		var parent string
-		if gw := gateways[d.Network]; gw != "" {
-			parent = "router:" + gw
-			routers[gw] = true
-		} else {
-			parent = "network:" + d.Network
-			extraNodes[parent] = Element{Group: "nodes", Data: map[string]any{"id": parent, "kind": "network", "label": d.Network}}
-		}
-		edgesByPair[parent+"|"+id] = edge{a: parent, b: id}
+		return ""
 	}
 
-	for id := range routers {
+	var els []Element
+	parents := map[string]string{} // node → parent box
+	if in.Compound {
+		boxes := []string{}
+		cidr := map[string]string{}
+		for _, n := range in.Networks {
+			boxes = append(boxes, n.Name)
+			cidr[n.Name] = n.CIDR.String()
+		}
+		for _, id := range order {
+			for _, n := range groups[id].networks() {
+				if !slices.Contains(boxes, n) {
+					boxes = append(boxes, n)
+				}
+			}
+		}
+		for _, n := range boxes {
+			label := n
+			if c := cidr[n]; c != "" {
+				label += "  " + c
+			}
+			els = append(els, Element{Group: "nodes", Data: map[string]any{"id": "net:" + n, "kind": "net", "label": label, "network": n}})
+		}
+		for _, id := range order {
+			nets := groups[id].networks()
+			if len(nets) == 1 {
+				parents[id] = "net:" + nets[0]
+				continue
+			}
+			for _, n := range nets {
+				edgesByPair[id+"|net:"+n] = edge{a: id, b: "net:" + n, kind: "member"}
+			}
+		}
+		for id, ip := range hops {
+			if n := netOf(ip); n != "" {
+				parents[id] = "net:" + n
+			}
+		}
+	} else {
+		linked := map[string]bool{}
+		for _, e := range edgesByPair {
+			linked[e.a], linked[e.b] = true, true
+		}
+		fallback := map[string]bool{}
+		for _, id := range order {
+			if linked[id] {
+				continue
+			}
+			network := groups[id].members[0].Network
+			var parent string
+			if gw := in.Gateways[network]; gw != "" {
+				parent = "router:" + gw
+				routers[gw] = true
+			} else {
+				parent = "network:" + network
+				if !fallback[parent] {
+					fallback[parent] = true
+					els = append(els, Element{Group: "nodes", Data: map[string]any{"id": parent, "kind": "network", "label": network}})
+				}
+			}
+			edgesByPair[parent+"|"+id] = edge{a: parent, b: id, kind: "link"}
+		}
+	}
+
+	withParent := func(id string, data map[string]any) map[string]any {
+		if p := parents[id]; p != "" {
+			data["parent"] = p
+		}
+		return data
+	}
+	for _, id := range sortedKeys(routers) {
 		els = append(els, Element{Group: "nodes", Data: map[string]any{"id": "router:" + id, "kind": "router", "label": id}})
 	}
-	for _, n := range extraNodes {
-		els = append(els, n)
+	for _, id := range sortedKeys(hops) {
+		ip := hops[id]
+		els = append(els, Element{Group: "nodes", Data: withParent(id, map[string]any{
+			"id": id, "kind": "hop", "label": ip.String(), "ip": ip.String(), "network": netOf(ip)})})
 	}
-	for _, d := range devices {
-		label := d.Label
-		if label == "" {
-			label = d.Hostname
-		}
-		ip := ""
-		if d.IP.IsValid() {
-			ip = d.IP.String()
-		}
-		if label == "" {
-			label = ip
-		}
-		status := "online"
-		if !d.Online {
-			status = "offline"
-		}
-		els = append(els, Element{Group: "nodes", Data: map[string]any{
-			"id": "device:" + d.Key, "key": d.Key, "kind": "device", "label": label, "status": status,
-			"known": d.Known, "ip": ip, "mac": d.MAC, "vendor": d.Vendor, "hostname": d.Hostname,
-			"network": d.Network, "port": d.Port, "lastSeen": d.LastSeen, "firstSeen": d.FirstSeen,
-		}})
+	for _, id := range order {
+		els = append(els, Element{Group: "nodes", Data: withParent(id, deviceData(groups[id]))})
 	}
+
 	pairs := make([]string, 0, len(edgesByPair))
 	for p := range edgesByPair {
 		pairs = append(pairs, p)
@@ -171,13 +286,90 @@ func Build(devices []model.Device, links []model.Link, gateways map[string]strin
 	sort.Strings(pairs)
 	for _, p := range pairs {
 		e := edgesByPair[p]
-		els = append(els, Element{Group: "edges", Data: map[string]any{"id": "e:" + p, "source": e.a, "target": e.b, "label": e.label}})
+		els = append(els, Element{Group: "edges", Data: map[string]any{"id": "e:" + p, "source": e.a, "target": e.b,
+			"label": e.label, "kind": e.kind}})
 	}
-	sort.SliceStable(els, func(i, j int) bool {
-		if els[i].Group != els[j].Group {
-			return els[i].Group == "nodes"
-		}
-		return false
-	})
 	return els
+}
+
+type memberJSON struct {
+	Network string `json:"network"`
+	Key     string `json:"key"`
+	IP      string `json:"ip"`
+	MAC     string `json:"mac"`
+	Online  bool   `json:"online"`
+}
+
+func deviceData(g *group) map[string]any {
+	first := g.members[0]
+	var label, hostname, vendor, port string
+	var ips, macs []string
+	var members []memberJSON
+	online, known := false, true
+	var firstSeen, lastSeen time.Time
+	for _, d := range g.members {
+		label = cmpOr(label, d.Label)
+		hostname = cmpOr(hostname, d.Hostname)
+		vendor = cmpOr(vendor, d.Vendor)
+		port = cmpOr(port, d.Port)
+		ip := ""
+		if d.IP.IsValid() {
+			ip = d.IP.String()
+			if !slices.Contains(ips, ip) {
+				ips = append(ips, ip)
+			}
+		}
+		if d.MAC != "" && !slices.Contains(macs, d.MAC) {
+			macs = append(macs, d.MAC)
+		}
+		online = online || d.Online
+		known = known && d.Known
+		if firstSeen.IsZero() || d.FirstSeen.Before(firstSeen) {
+			firstSeen = d.FirstSeen
+		}
+		if d.LastSeen.After(lastSeen) {
+			lastSeen = d.LastSeen
+		}
+		members = append(members, memberJSON{d.Network, d.Key, ip, d.MAC, d.Online})
+	}
+	ip := strings.Join(ips, ", ")
+	status := "offline"
+	if online {
+		status = "online"
+	}
+	nets := g.networks()
+	data := map[string]any{
+		"id": g.id, "key": first.Key, "kind": "device", "label": cmpOr(label, hostname, first.IP.String()),
+		"status": status, "known": known, "ip": ip, "mac": strings.Join(macs, ", "), "vendor": vendor,
+		"hostname": hostname, "network": strings.Join(nets, ", "), "networks": nets, "port": port,
+		"lastSeen": lastSeen, "firstSeen": firstSeen, "members": members,
+	}
+	if !first.IP.IsValid() && label == "" && hostname == "" {
+		data["label"] = first.Key
+	}
+	if g.router {
+		data["router"] = true
+	}
+	if strings.HasPrefix(g.id, "machine:") {
+		data["machine"] = strings.TrimPrefix(g.id, "machine:")
+	}
+	return data
+}
+
+func cmpOr(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
