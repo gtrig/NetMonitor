@@ -67,6 +67,12 @@ type Device struct {
 	MergedInto string
 }
 
+// MemberRef identifies one stored device row.
+type MemberRef struct {
+	Network string `json:"network"`
+	Key     string `json:"key"`
+}
+
 // Event is a detected change.
 type Event struct {
 	ID        int64

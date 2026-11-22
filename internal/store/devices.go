@@ -91,6 +91,9 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE network = ? AND key = ?`, d.Network, d.Key); err != nil {
 				return err
 			}
+			if err := moveMembership(ctx, tx, d.Network, d.Key, d.MergedInto); err != nil {
+				return err
+			}
 			continue
 		}
 		if d.PrevKey != "" && d.PrevKey != d.Key {
@@ -100,6 +103,9 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE devices SET key = ? WHERE network = ? AND key = ?`, d.Key, d.Network, d.PrevKey); err != nil {
+				return err
+			}
+			if err := moveMembership(ctx, tx, d.Network, d.PrevKey, d.Key); err != nil {
 				return err
 			}
 		}

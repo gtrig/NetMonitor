@@ -58,6 +58,13 @@ var migrations = []string{
 		PRIMARY KEY (network, source)
 	);`,
 	`ALTER TABLE devices ADD COLUMN seen_by TEXT NOT NULL DEFAULT '';`,
+	`CREATE TABLE machine_members (
+		network TEXT NOT NULL,
+		key TEXT NOT NULL,
+		machine_id INTEGER NOT NULL,
+		PRIMARY KEY (network, key)
+	);
+	CREATE INDEX machine_members_id ON machine_members(machine_id);`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.
