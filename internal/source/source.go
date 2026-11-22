@@ -97,3 +97,23 @@ func combine(a, b model.Host) model.Host {
 	}
 	return a
 }
+
+// Progress is how far a running collection has got.
+type Progress struct {
+	Task    string  // what the source is doing, e.g. "Ping Scan"
+	Percent float64 // 0–100
+}
+
+type progressKey struct{}
+
+// WithProgress returns a context whose collections report progress to f.
+func WithProgress(ctx context.Context, f func(Progress)) context.Context {
+	return context.WithValue(ctx, progressKey{}, f)
+}
+
+// ReportProgress passes p to the callback in ctx, if any.
+func ReportProgress(ctx context.Context, p Progress) {
+	if f, ok := ctx.Value(progressKey{}).(func(Progress)); ok && f != nil {
+		f(p)
+	}
+}

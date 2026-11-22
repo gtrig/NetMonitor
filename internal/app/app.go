@@ -232,7 +232,7 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 			case "snmp":
 				src = targets[ref.Ref]
 			case "nmap":
-				src = nmap.New(ref.Args, nil)
+				src = nmap.New(ref.Args, ref.Traceroute, nil)
 			}
 			jobs = append(jobs, scheduler.Job{Network: n, Source: src, Interval: ref.Interval.Duration, OfflineAfter: n.OfflineAfterFor(ref)})
 		}

@@ -103,9 +103,9 @@ func TestNetworkRenames(t *testing.T) {
 	if e.Networks[0].OriginalName != "lan" {
 		t.Fatalf("Mask did not set network original name: %+v", e.Networks)
 	}
-	e.Networks[0].Name = "GTLan"                                                  // rename
+	e.Networks[0].Name = "GTLan"                                                    // rename
 	e.Networks = append(e.Networks, config.Network{Name: "x", OriginalName: "lan"}) // second claimant
-	e.Networks = append(e.Networks, config.Network{Name: "new"})                  // new item
+	e.Networks = append(e.Networks, config.Network{Name: "new"})                    // new item
 	got := NetworkRenames(r, e)
 	if len(got) != 1 || got["lan"] != "GTLan" {
 		t.Fatalf("renames = %v", got)

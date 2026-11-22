@@ -133,3 +133,13 @@ input.label:hover, input.label:focus { border-color: var(--border); background: 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tag.machine { color: var(--router); border-color: var(--router); }
 tr.in-machine td:first-child { box-shadow: inset 3px 0 0 var(--router); }
+.jobs-panel { margin: 24px 0; }
+.state { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--muted); }
+.state-running { color: var(--accent); border-color: var(--accent); }
+.state-queued { color: var(--warn); border-color: var(--warn); }
+.progress-cell { min-width: 180px; }
+.bar-outer { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 2px; }
+.bar-inner { height: 100%; background: var(--accent); transition: width .5s; }
+.spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .bar-inner { transition: none; } }

@@ -20,6 +20,16 @@ import (
 // ErrUnknownNetwork is returned by ScanNow for a network that has no jobs.
 var ErrUnknownNetwork = errors.New("unknown network")
 
+// ErrUnknownJob is returned by ScanJob for a job id that does not exist.
+var ErrUnknownJob = errors.New("unknown job")
+
+// Job states.
+const (
+	StateIdle    = "idle"
+	StateQueued  = "queued" // waiting for a free collection slot
+	StateRunning = "running"
+)
+
 // MaxConcurrent is the maximum number of collections running at once.
 const MaxConcurrent = 4
 
@@ -34,15 +44,22 @@ type Job struct {
 	OfflineAfter time.Duration
 }
 
-// JobStatus describes the last run of a job.
+// JobStatus describes a job: its current state and its last run.
 type JobStatus struct {
-	Network  string    `json:"network"`
-	Source   string    `json:"source"`
-	Interval string    `json:"interval"`
-	LastRun  time.Time `json:"lastRun"`
-	LastOK   time.Time `json:"lastOK"`
-	LastErr  string    `json:"lastErr,omitempty"`
-	Running  bool      `json:"running"`
+	ID           int       `json:"id"`
+	Network      string    `json:"network"`
+	Source       string    `json:"source"`
+	Interval     string    `json:"interval"`
+	State        string    `json:"state"`
+	StartedAt    time.Time `json:"startedAt"`
+	NextRun      time.Time `json:"nextRun"`
+	Progress     *float64  `json:"progress,omitempty"` // percent, when the source reports it
+	Task         string    `json:"task,omitempty"`
+	LastRun      time.Time `json:"lastRun"`
+	LastOK       time.Time `json:"lastOK"`
+	LastDuration float64   `json:"lastDuration"` // seconds
+	LastErr      string    `json:"lastErr,omitempty"`
+	Running      bool      `json:"running"`
 }
 
 // Scheduler runs jobs.
@@ -64,9 +81,10 @@ type Scheduler struct {
 func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver, jobs []Job) *Scheduler {
 	s := &Scheduler{st: st, sink: sink, oui: oui, res: res, jobs: jobs, sem: make(chan struct{}, MaxConcurrent),
 		netLock: map[string]*sync.Mutex{}}
-	for _, j := range jobs {
+	for i, j := range jobs {
 		s.trigger = append(s.trigger, make(chan struct{}, 1))
-		s.status = append(s.status, JobStatus{Network: j.Network.Name, Source: j.Source.Name(), Interval: humanDuration(j.Interval)})
+		s.status = append(s.status, JobStatus{ID: i, Network: j.Network.Name, Source: j.Source.Name(),
+			Interval: humanDuration(j.Interval), State: StateIdle})
 		if s.netLock[j.Network.Name] == nil {
 			s.netLock[j.Network.Name] = &sync.Mutex{}
 		}
@@ -87,12 +105,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 			defer t.Stop()
 			for {
 				s.runGuarded(ctx, i)
+				t.Reset(j.Interval)
+				next := time.Now().UTC().Add(j.Interval)
+				s.setStatusAt(i, func(st *JobStatus) { st.NextRun = next })
 				select {
 				case <-ctx.Done():
 					return
 				case <-t.C:
 				case <-s.trigger[i]:
-					t.Reset(j.Interval)
 				}
 			}
 		}(i)
@@ -101,9 +121,11 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runGuarded(ctx context.Context, i int) {
+	s.setStatusAt(i, func(st *JobStatus) { st.State = StateQueued })
 	select {
 	case s.sem <- struct{}{}:
 	case <-ctx.Done():
+		s.setStatusAt(i, func(st *JobStatus) { st.State = StateIdle })
 		return
 	}
 	defer func() { <-s.sem }()
@@ -130,11 +152,36 @@ func (s *Scheduler) ScanNow(network string) error {
 	return nil
 }
 
+// ScanJob triggers one job by id without waiting for it.
+func (s *Scheduler) ScanJob(id int) error {
+	if id < 0 || id >= len(s.jobs) {
+		return fmt.Errorf("%w: %d", ErrUnknownJob, id)
+	}
+	select {
+	case s.trigger[id] <- struct{}{}:
+	default: // already pending
+	}
+	return nil
+}
+
 // Status returns a snapshot of every job's last run.
 func (s *Scheduler) Status() []JobStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]JobStatus(nil), s.status...)
+	out := append([]JobStatus(nil), s.status...)
+	for i := range out {
+		if p := out[i].Progress; p != nil {
+			v := *p
+			out[i].Progress = &v
+		}
+	}
+	return out
+}
+
+func (s *Scheduler) setStatusAt(i int, f func(*JobStatus)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f(&s.status[i])
 }
 
 func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
@@ -160,10 +207,22 @@ func (s *Scheduler) thresholds(network string) map[string]time.Duration {
 
 // RunOnce runs one collection through the whole pipeline.
 func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
-	s.setStatus(j, func(st *JobStatus) { st.Running = true; st.LastRun = time.Now().UTC() })
+	start := time.Now().UTC()
+	s.setStatus(j, func(st *JobStatus) {
+		st.Running, st.State, st.StartedAt, st.LastRun = true, StateRunning, start, start
+		st.Progress, st.Task = nil, ""
+	})
+	ctx = source.WithProgress(ctx, func(p source.Progress) {
+		s.setStatus(j, func(st *JobStatus) {
+			v := p.Percent
+			st.Progress, st.Task = &v, p.Task
+		})
+	})
 	err := s.runOnce(ctx, j)
 	s.setStatus(j, func(st *JobStatus) {
-		st.Running = false
+		st.Running, st.State = false, StateIdle
+		st.Progress, st.Task = nil, ""
+		st.LastDuration = time.Since(start).Seconds()
 		if err != nil {
 			st.LastErr = err.Error()
 		} else {

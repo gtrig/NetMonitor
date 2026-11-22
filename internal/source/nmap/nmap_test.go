@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gtrig/netmon/internal/config"
+	"github.com/gtrig/netmon/internal/source"
 )
 
 func TestParseXMLHosts(t *testing.T) {
@@ -48,15 +49,15 @@ func TestParseXMLTraceroute(t *testing.T) {
 }
 
 func TestBuildArgs(t *testing.T) {
-	got := BuildArgs([]string{"-sn", "-T4"}, netip.MustParsePrefix("10.0.0.0/24"))
-	want := []string{"-sn", "-oX", "-", "-T4", "10.0.0.0/24"}
+	got := BuildArgs([]string{"-sn", "-T4"}, false, netip.MustParsePrefix("10.0.0.0/24"))
+	want := []string{"-sn", "-oX", "-", "--stats-every", "2s", "-T4", "10.0.0.0/24"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
 
 func TestCollectNmapMissing(t *testing.T) {
-	s := New(nil, func(ctx context.Context, args ...string) ([]byte, error) { return nil, exec.ErrNotFound })
+	s := New(nil, false, func(ctx context.Context, args ...string) ([]byte, error) { return nil, exec.ErrNotFound })
 	_, err := s.Collect(context.Background(), config.Network{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")})
 	if err == nil || !strings.Contains(err.Error(), "nmap not found") {
 		t.Fatalf("err = %v", err)
@@ -66,9 +67,55 @@ func TestCollectNmapMissing(t *testing.T) {
 func TestCollectPassesArgs(t *testing.T) {
 	data, _ := os.ReadFile("testdata/lan.xml")
 	var gotArgs []string
-	s := New([]string{"-T4"}, func(ctx context.Context, args ...string) ([]byte, error) { gotArgs = args; return data, nil })
+	s := New([]string{"-T4"}, false, func(ctx context.Context, args ...string) ([]byte, error) { gotArgs = args; return data, nil })
 	o, err := s.Collect(context.Background(), config.Network{Name: "lan", CIDR: netip.MustParsePrefix("192.168.88.0/24")})
 	if err != nil || len(o.Hosts) != 2 || o.Source != "nmap" || gotArgs[len(gotArgs)-1] != "192.168.88.0/24" {
 		t.Fatalf("o=%+v err=%v args=%v", o, err, gotArgs)
+	}
+}
+
+func TestBuildArgsTraceroute(t *testing.T) {
+	got := BuildArgs([]string{"--traceroute"}, true, netip.MustParsePrefix("10.0.0.0/24"))
+	if n := slices.Index(got, "--traceroute"); n < 0 || slices.Index(got[n+1:], "--traceroute") >= 0 {
+		t.Fatalf("want exactly one --traceroute: %v", got)
+	}
+}
+
+func TestParseProgress(t *testing.T) {
+	data, _ := os.ReadFile("testdata/progress.txt")
+	var got []Progress
+	for _, l := range strings.Split(string(data), "\n") {
+		if p, ok := ParseProgress(l); ok {
+			got = append(got, p)
+		}
+	}
+	if len(got) != 2 || got[0].Task != "Ping Scan" || got[0].Percent != 23.45 || got[1].Task != "Traceroute" || got[1].Percent != 50 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestParseXMLWithTaskprogress(t *testing.T) {
+	data, _ := os.ReadFile("testdata/traceroute.xml")
+	s := strings.Replace(string(data), "<host", `<taskprogress task="Ping Scan" time="1" percent="10.00" remaining="5" etime="6"/>
+<host`, 1)
+	hosts, links, err := ParseXML([]byte(s))
+	if err != nil || len(hosts) == 0 || len(links) != 2 {
+		t.Fatalf("hosts=%d links=%d err=%v", len(hosts), len(links), err)
+	}
+}
+
+func TestCollectReportsProgress(t *testing.T) {
+	data, _ := os.ReadFile("testdata/lan.xml")
+	var got []Progress
+	ctx := source.WithProgress(context.Background(), func(p source.Progress) { got = append(got, Progress(p)) })
+	s := New(nil, false, func(ctx context.Context, args ...string) ([]byte, error) {
+		source.ReportProgress(ctx, source.Progress{Task: "Ping Scan", Percent: 42})
+		return data, nil
+	})
+	if _, err := s.Collect(ctx, config.Network{Name: "lan", CIDR: netip.MustParsePrefix("192.168.88.0/24")}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Percent != 42 {
+		t.Fatalf("progress = %+v", got)
 	}
 }

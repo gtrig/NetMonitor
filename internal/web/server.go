@@ -35,6 +35,7 @@ var staticFS embed.FS
 type Runtime struct {
 	Scheduler interface {
 		ScanNow(network string) error
+		ScanJob(id int) error
 		Status() []scheduler.JobStatus
 	}
 	Notifier interface {
@@ -112,6 +113,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/data/networks/{name}/merge", s.apiMergeNetworkData)
 	mux.HandleFunc("DELETE /api/data/networks/{name}", s.apiDeleteNetworkData)
 	mux.HandleFunc("POST /api/scan/{network}", s.apiScan)
+	mux.HandleFunc("GET /api/jobs", s.apiJobs)
+	mux.HandleFunc("POST /api/jobs/{id}/scan", s.apiScanJob)
 	mux.HandleFunc("POST /api/notify/test/{channel}", s.apiNotifyTest)
 	mux.HandleFunc("GET /settings", s.page("settings", "Settings"))
 	mux.HandleFunc("GET /api/settings", s.apiGetSettings)
@@ -360,6 +363,31 @@ func (s *server) apiScan(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, scheduler.ErrUnknownNetwork):
 		http.Error(w, "unknown network", http.StatusNotFound)
+	case err != nil:
+		serverError(w, err)
+	default:
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+func (s *server) apiJobs(w http.ResponseWriter, r *http.Request) {
+	st := s.rt().Scheduler.Status()
+	if st == nil {
+		st = []scheduler.JobStatus{}
+	}
+	writeJSON(w, st)
+}
+
+func (s *server) apiScanJob(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err == nil {
+		err = s.rt().Scheduler.ScanJob(id)
+	} else {
+		err = scheduler.ErrUnknownJob
+	}
+	switch {
+	case errors.Is(err, scheduler.ErrUnknownJob):
+		http.Error(w, "unknown job", http.StatusNotFound)
 	case err != nil:
 		serverError(w, err)
 	default:

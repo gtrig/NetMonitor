@@ -26,6 +26,16 @@
 {{end}}
 </section>
 
+<section class="jobs-panel">
+  <h2>Scan jobs</h2>
+  <div class="table-wrap">
+  <table id="jobs">
+    <thead><tr><th>Network</th><th>Source</th><th>State</th><th>Progress</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
+    <tbody><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+  </table>
+  </div>
+</section>
+
 <section class="split">
   <div>
     <h2>Recent changes</h2>
@@ -50,3 +60,4 @@
   </div>
 </section>
 {{end}}
+{{define "scripts"}}<script src="/static/jobs.js"></script>{{end}}

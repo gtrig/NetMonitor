@@ -27,6 +27,13 @@ func (f *fakeSched) ScanNow(n string) error {
 	f.scanned = append(f.scanned, n)
 	return nil
 }
+func (f *fakeSched) ScanJob(id int) error {
+	if id != 0 {
+		return scheduler.ErrUnknownJob
+	}
+	f.scanned = append(f.scanned, "job0")
+	return nil
+}
 func (f *fakeSched) Status() []scheduler.JobStatus {
 	return []scheduler.JobStatus{{Network: "lan", Source: "nmap"}}
 }
@@ -179,5 +186,21 @@ func TestCrossOriginPostRejected(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != 403 || len(fs.scanned) != 0 {
 		t.Fatalf("code=%d scanned=%v", rr.Code, fs.scanned)
+	}
+}
+
+func TestJobsAPI(t *testing.T) {
+	h, _, fs := newTest(t, creds)
+	rr := do(h, "GET", "/api/jobs", "", true)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"source":"nmap"`) {
+		t.Fatalf("%d %s", rr.Code, rr.Body)
+	}
+	if rr := do(h, "POST", "/api/jobs/0/scan", "", true); rr.Code != 202 || len(fs.scanned) != 1 {
+		t.Fatalf("scan: %d %v", rr.Code, fs.scanned)
+	}
+	for _, id := range []string{"9", "x"} {
+		if rr := do(h, "POST", "/api/jobs/"+id+"/scan", "", true); rr.Code != 404 {
+			t.Fatalf("job %s: %d", id, rr.Code)
+		}
 	}
 }
