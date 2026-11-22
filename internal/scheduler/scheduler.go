@@ -140,7 +140,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 			defer t.Stop()
 			if wait := s.firstDelay(ctx, j); wait > 0 {
 				next := time.Now().UTC().Add(wait)
-				s.setStatusAt(i, func(st *JobStatus) { st.NextRun, st.LastOK, st.LastRun = next, next.Add(-j.Interval), next.Add(-j.Interval) })
+				s.setStatusAt(i, func(st *JobStatus) {
+					st.NextRun, st.LastOK, st.LastRun = next, next.Add(-j.Interval), next.Add(-j.Interval)
+				})
 				timer := time.NewTimer(wait)
 				select {
 				case <-ctx.Done():
