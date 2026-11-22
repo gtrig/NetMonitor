@@ -138,6 +138,19 @@ func (s *Scheduler) Run(ctx context.Context) {
 			j := s.jobs[i]
 			t := time.NewTicker(j.Interval)
 			defer t.Stop()
+			if wait := s.firstDelay(ctx, j); wait > 0 {
+				next := time.Now().UTC().Add(wait)
+				s.setStatusAt(i, func(st *JobStatus) { st.NextRun, st.LastOK, st.LastRun = next, next.Add(-j.Interval), next.Add(-j.Interval) })
+				timer := time.NewTimer(wait)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				case <-s.trigger[i]:
+					timer.Stop()
+				}
+			}
 			for {
 				s.runGuarded(ctx, i)
 				t.Reset(j.Interval)

@@ -34,7 +34,7 @@ func (s *Scheduler) runDetails(ctx context.Context, network string, d DetailScan
 		keys[dev.IP] = dev.Key
 	}
 	if len(targets) == 0 {
-		return nil
+		return s.markDetailsRun(ctx, network, d, onlyKey)
 	}
 	hosts, err := d.Scan(ctx, targets)
 	if err != nil {
@@ -48,7 +48,39 @@ func (s *Scheduler) runDetails(ctx context.Context, network string, d DetailScan
 				OSAccuracy: h.OSAccuracy, Ports: h.Ports})
 		}
 	}
-	return s.st.SaveDetails(ctx, out)
+	if err := s.st.SaveDetails(ctx, out); err != nil {
+		return err
+	}
+	return s.markDetailsRun(ctx, network, d, onlyKey)
+}
+
+// markDetailsRun records a finished network-wide detailed scan, so a restart waits for the
+// interval instead of rescanning. Offline detection ignores this entry (no device is seen by it).
+func (s *Scheduler) markDetailsRun(ctx context.Context, network string, d DetailScanner, onlyKey string) error {
+	if onlyKey != "" {
+		return nil
+	}
+	return s.st.SetLastSuccess(ctx, network, d.Name(), time.Now().UTC())
+}
+
+// firstDelay is how long a details job waits after start: the rest of its interval since its
+// last recorded run, or 0.
+func (s *Scheduler) firstDelay(ctx context.Context, j Job) time.Duration {
+	if j.Details == nil {
+		return 0
+	}
+	last, err := s.st.LastSuccesses(ctx, j.Network.Name)
+	if err != nil {
+		return 0
+	}
+	t, ok := last[j.Details.Name()]
+	if !ok {
+		return 0
+	}
+	if wait := time.Until(t.Add(j.Interval)); wait > 0 {
+		return wait
+	}
+	return 0
 }
 
 // scannerFor returns the network's services scanner, or DefaultDetails.

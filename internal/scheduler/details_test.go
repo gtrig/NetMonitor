@@ -123,3 +123,29 @@ func TestScanDeviceAfterStop(t *testing.T) {
 		t.Fatal("scan accepted after stop")
 	}
 }
+
+// A restart or settings save must not rerun a detailed scan that ran recently.
+func TestDetailsJobWaitsForIntervalAfterRestart(t *testing.T) {
+	s, st, sk, _ := setup(t, &fakeSource{})
+	fd := &fakeDetails{}
+	j := Job{Network: lan, Details: fd, Interval: 6 * time.Hour}
+	s = New(st, sk, nil, nil, []Job{j})
+	seed(t, s)
+	if err := s.RunOnce(context.Background(), j); err != nil { // records the run
+		t.Fatal(err)
+	}
+	s2 := New(st, sk, nil, nil, []Job{j})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s2.Run(ctx); close(done) }()
+	waitFor(t, func() bool { return !s2.Status()[0].NextRun.IsZero() })
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+	if len(fd.targets) != 1 {
+		t.Fatalf("detailed scan ran again on restart: %d runs", len(fd.targets))
+	}
+	if d := time.Until(s2.Status()[0].NextRun); d < 5*time.Hour {
+		t.Fatalf("next run in %v, want ~6h", d)
+	}
+}
