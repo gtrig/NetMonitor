@@ -52,8 +52,10 @@ var migrations = []string{
 	);
 	CREATE INDEX links_network ON links(network, source);
 	CREATE TABLE network_state (
-		network TEXT PRIMARY KEY,
-		last_success INTEGER NOT NULL
+		network TEXT NOT NULL,
+		source TEXT NOT NULL,
+		last_success INTEGER NOT NULL,
+		PRIMARY KEY (network, source)
 	);`,
 }
 

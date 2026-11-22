@@ -46,8 +46,12 @@ func TestDefaults(t *testing.T) {
 	if n.Sources[0].Interval.Duration != 5*time.Minute {
 		t.Errorf("interval = %v", n.Sources[0].Interval)
 	}
-	if n.OfflineAfter.Duration != 15*time.Minute {
-		t.Errorf("offline_after = %v", n.OfflineAfter)
+	if got := n.OfflineAfterFor(n.Sources[0]); got != 15*time.Minute {
+		t.Errorf("offline after = %v", got)
+	}
+	n.OfflineAfter.Duration = time.Hour
+	if got := n.OfflineAfterFor(n.Sources[0]); got != time.Hour {
+		t.Errorf("explicit offline_after = %v", got)
 	}
 }
 

@@ -145,22 +145,41 @@ func sourceOf(h model.Host, obs model.Observations) string {
 	return obs.Source
 }
 
-// Offline marks online devices of network whose LastSeen is more than offlineAfter
-// before lastSuccess (the network's last successful collection). It never reads the clock,
-// so failed collections can't cause false offline events.
-func Offline(known []model.Device, network string, lastSuccess time.Time, offlineAfter time.Duration) ([]model.Device, []model.Event) {
+// Offline marks online devices of network as offline once every source that has seen the
+// device has completed a successful collection more than that source's offline threshold after
+// the device was last seen. lastSuccess and after are keyed by source name. It never reads the
+// clock, so failed collections can't cause false offline events.
+func Offline(known []model.Device, network string, lastSuccess map[string]time.Time, after map[string]time.Duration) ([]model.Device, []model.Event) {
 	var changed []model.Device
 	var events []model.Event
 	for _, d := range known {
 		if d.Network != network || !d.Online {
 			continue
 		}
-		if lastSuccess.Sub(d.LastSeen) > offlineAfter {
-			d.Online = false
-			changed = append(changed, d)
-			events = append(events, model.Event{Type: model.EventDeviceOffline, Network: network, DeviceKey: d.Key,
-				At: lastSuccess, Message: "Offline: " + Describe(d)})
+		missedByAll, applicable := true, false
+		var at time.Time
+		for _, src := range d.Sources {
+			ls, ok := lastSuccess[src]
+			th, ok2 := after[src]
+			if !ok || !ok2 {
+				continue // source no longer configured
+			}
+			applicable = true
+			if ls.Sub(d.LastSeen) <= th {
+				missedByAll = false
+				break
+			}
+			if ls.After(at) {
+				at = ls
+			}
 		}
+		if !applicable || !missedByAll {
+			continue
+		}
+		d.Online = false
+		changed = append(changed, d)
+		events = append(events, model.Event{Type: model.EventDeviceOffline, Network: network, DeviceKey: d.Key,
+			At: at, Message: "Offline: " + Describe(d)})
 	}
 	return changed, events
 }

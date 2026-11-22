@@ -155,17 +155,10 @@ func (c *Config) applyDefaults() {
 	}
 	for i := range c.Networks {
 		n := &c.Networks[i]
-		var smallest time.Duration
 		for j := range n.Sources {
 			if n.Sources[j].Interval.Duration == 0 {
 				n.Sources[j].Interval.Duration = DefaultInterval
 			}
-			if d := n.Sources[j].Interval.Duration; smallest == 0 || d < smallest {
-				smallest = d
-			}
-		}
-		if n.OfflineAfter.Duration == 0 {
-			n.OfflineAfter.Duration = 3 * smallest
 		}
 	}
 }
@@ -291,4 +284,17 @@ func (c *Config) Validate() error {
 		bad("auth: username and password are required when auth is set")
 	}
 	return errors.Join(errs...)
+}
+
+// MissedScans is how many consecutive collections a source must miss a device before it is offline.
+const MissedScans = 3
+
+// OfflineAfterFor returns how long after a device was last seen a source's successful
+// collections must keep missing it before it counts as offline: the network's explicit
+// offline_after if set, else MissedScans × the source's interval.
+func (n Network) OfflineAfterFor(s SourceRef) time.Duration {
+	if n.OfflineAfter.Duration > 0 {
+		return n.OfflineAfter.Duration
+	}
+	return MissedScans * s.Interval.Duration
 }

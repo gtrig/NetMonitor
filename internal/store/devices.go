@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"net/netip"
 	"strings"
 	"time"
@@ -105,22 +103,28 @@ func (s *Store) IsKnown(ctx context.Context, key string) bool {
 	return known
 }
 
-// LastSuccess returns the time of the network's last successful collection (zero if never).
-func (s *Store) LastSuccess(ctx context.Context, network string) (time.Time, error) {
-	var ts int64
-	err := s.db.QueryRowContext(ctx, `SELECT last_success FROM network_state WHERE network = ?`, network).Scan(&ts)
+// LastSuccesses returns source name → time of its last successful collection for network.
+func (s *Store) LastSuccesses(ctx context.Context, network string) (map[string]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT source, last_success FROM network_state WHERE network = ?`, network)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return time.Time{}, nil
-		}
-		return time.Time{}, err
+		return nil, err
 	}
-	return time.Unix(ts, 0).UTC(), nil
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var src string
+		var ts int64
+		if err := rows.Scan(&src, &ts); err != nil {
+			return nil, err
+		}
+		out[src] = time.Unix(ts, 0).UTC()
+	}
+	return out, rows.Err()
 }
 
-// SetLastSuccess records a successful collection time for network.
-func (s *Store) SetLastSuccess(ctx context.Context, network string, t time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO network_state (network, last_success) VALUES (?, ?)
-		ON CONFLICT (network) DO UPDATE SET last_success = excluded.last_success`, network, t.Unix())
+// SetLastSuccess records a successful collection time for (network, source).
+func (s *Store) SetLastSuccess(ctx context.Context, network, source string, t time.Time) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO network_state (network, source, last_success) VALUES (?, ?, ?)
+		ON CONFLICT (network, source) DO UPDATE SET last_success = excluded.last_success`, network, source, t.Unix())
 	return err
 }

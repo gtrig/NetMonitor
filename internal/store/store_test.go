@@ -105,13 +105,16 @@ func TestReplaceLinksScopedBySource(t *testing.T) {
 func TestLastSuccess(t *testing.T) {
 	s, _ := openTemp(t)
 	ctx := context.Background()
-	if ts, err := s.LastSuccess(ctx, "lan"); err != nil || !ts.IsZero() {
-		t.Fatalf("initial = %v, %v", ts, err)
+	if m, err := s.LastSuccesses(ctx, "lan"); err != nil || len(m) != 0 {
+		t.Fatalf("initial = %v, %v", m, err)
 	}
 	now := time.Now().Truncate(time.Second)
-	s.SetLastSuccess(ctx, "lan", now)
-	if ts, _ := s.LastSuccess(ctx, "lan"); !ts.Equal(now) {
-		t.Fatalf("got %v want %v", ts, now)
+	s.SetLastSuccess(ctx, "lan", "nmap", now)
+	s.SetLastSuccess(ctx, "lan", "router:core", now.Add(time.Minute))
+	s.SetLastSuccess(ctx, "iot", "nmap", now)
+	m, _ := s.LastSuccesses(ctx, "lan")
+	if len(m) != 2 || !m["nmap"].Equal(now) || !m["router:core"].Equal(now.Add(time.Minute)) {
+		t.Fatalf("got %v", m)
 	}
 }
 

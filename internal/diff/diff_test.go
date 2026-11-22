@@ -125,12 +125,14 @@ func TestApplyIPOnlyMatchesKnownMACDevice(t *testing.T) {
 func TestOfflineAfterThreshold(t *testing.T) {
 	d := dev("aa:00:00:00:00:01", "10.0.0.1", "a")
 	d.LastSeen = t0.Add(-20 * time.Minute)
-	changed, evs := Offline([]model.Device{d}, "lan", t0, 15*time.Minute)
+	last := map[string]time.Time{"nmap": t0}
+	after := map[string]time.Duration{"nmap": 15 * time.Minute}
+	changed, evs := Offline([]model.Device{d}, "lan", last, after)
 	if len(evs) != 1 || evs[0].Type != model.EventDeviceOffline || changed[0].Online {
 		t.Fatalf("events = %+v", evs)
 	}
 	d.LastSeen = t0.Add(-10 * time.Minute)
-	if _, evs := Offline([]model.Device{d}, "lan", t0, 15*time.Minute); len(evs) != 0 {
+	if _, evs := Offline([]model.Device{d}, "lan", last, after); len(evs) != 0 {
 		t.Fatalf("unexpected %+v", evs)
 	}
 }
@@ -139,8 +141,29 @@ func TestOfflineIgnoresFailedCollections(t *testing.T) {
 	// The last successful collection saw the device; nothing succeeded since.
 	d := dev("aa:00:00:00:00:01", "10.0.0.1", "a")
 	d.LastSeen = t0
-	if _, evs := Offline([]model.Device{d}, "lan", t0, 15*time.Minute); len(evs) != 0 {
+	if _, evs := Offline([]model.Device{d}, "lan", map[string]time.Time{"nmap": t0},
+		map[string]time.Duration{"nmap": 15 * time.Minute}); len(evs) != 0 {
 		t.Fatalf("unexpected %+v", evs)
+	}
+}
+
+func TestOfflineWaitsForEverySourceThatSawDevice(t *testing.T) {
+	// Seen only by nmap (15m interval). The router polls every minute but never sees it,
+	// so the router's fresh success must not mark it offline.
+	d := dev("", "10.0.0.9", "")
+	d.Sources = []string{"nmap"}
+	d.LastSeen = t0.Add(-10 * time.Minute)
+	last := map[string]time.Time{"router:core": t0, "nmap": t0.Add(-10 * time.Minute)}
+	after := map[string]time.Duration{"router:core": 3 * time.Minute, "nmap": 45 * time.Minute}
+	if _, evs := Offline([]model.Device{d}, "lan", last, after); len(evs) != 0 {
+		t.Fatalf("unexpected %+v", evs)
+	}
+	// Seen by both: offline only when both have missed it long enough.
+	d.Sources = []string{"nmap", "router:core"}
+	d.LastSeen = t0.Add(-50 * time.Minute)
+	last["nmap"] = t0
+	if _, evs := Offline([]model.Device{d}, "lan", last, after); len(evs) != 1 {
+		t.Fatalf("expected offline, got %+v", evs)
 	}
 }
 
@@ -151,7 +174,8 @@ func TestOfflineSkipsAlreadyOfflineAndOtherNetworks(t *testing.T) {
 	b := dev("aa:00:00:00:00:02", "10.0.0.2", "b")
 	b.Network = "iot"
 	b.LastSeen = t0.Add(-time.Hour)
-	if _, evs := Offline([]model.Device{a, b}, "lan", t0, 15*time.Minute); len(evs) != 0 {
+	if _, evs := Offline([]model.Device{a, b}, "lan", map[string]time.Time{"nmap": t0},
+		map[string]time.Duration{"nmap": 15 * time.Minute}); len(evs) != 0 {
 		t.Fatalf("unexpected %+v", evs)
 	}
 }
