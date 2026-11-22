@@ -82,3 +82,44 @@ func TestScanDevice(t *testing.T) {
 	})
 	waitFor(t, func() bool { return len(s.Status()) == 0 })
 }
+
+// Review: two sources with the same name on one network keep separate status rows.
+func TestStatusByJobIdentity(t *testing.T) {
+	a, b := &fakeSource{}, &fakeSource{}
+	s, st, sk, _ := setup(t, a)
+	ja := Job{Network: lan, Source: a, Interval: time.Hour, OfflineAfter: time.Hour}
+	jb := Job{Network: lan, Source: b, Interval: time.Hour, OfflineAfter: time.Hour}
+	s = New(st, sk, nil, nil, []Job{ja, jb})
+	s.RunOnce(context.Background(), ja)
+	if got := s.Status(); got[0].LastOK.IsZero() || !got[1].LastOK.IsZero() {
+		t.Fatalf("status rows mixed: %+v", got)
+	}
+}
+
+// Review: a network's Scan now refreshes presence only, not the slow services scan.
+func TestScanNowSkipsDetailsJobs(t *testing.T) {
+	s, st, sk, _ := setup(t, &fakeSource{})
+	s = New(st, sk, nil, nil, []Job{{Network: lan, Source: &fakeSource{}, Interval: time.Hour}, {Network: lan, Details: &fakeDetails{}, Interval: time.Hour}})
+	if err := s.ScanNow("lan"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.trigger[0]) != 1 || len(s.trigger[1]) != 0 {
+		t.Fatalf("triggers = %d, %d", len(s.trigger[0]), len(s.trigger[1]))
+	}
+}
+
+// Review: no device scan may start once the scheduler has stopped.
+func TestScanDeviceAfterStop(t *testing.T) {
+	s, _, _, _ := setup(t, &fakeSource{})
+	s.DefaultDetails = &fakeDetails{}
+	seed(t, s)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	waitFor(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.runCtx != nil })
+	cancel()
+	<-done
+	if err := s.ScanDevice("lan", "mac:aa"); err == nil {
+		t.Fatal("scan accepted after stop")
+	}
+}

@@ -255,6 +255,11 @@ func (c *Config) applyDefaults() {
 
 var forbiddenNmapArgs = []string{"-p", "-sS", "-sT", "-sU", "-sV", "-O", "-A"}
 
+// forbiddenServicesArgs are prefixes of nmap args a services source may not use: NSE scripts
+// (they can run arbitrary code), other target lists, and output/resume files (stdout must
+// stay XML and netmon must not write files).
+var forbiddenServicesArgs = []string{"--script", "-sC", "-A", "-i", "--datadir", "--resume", "-o", "--o", "--append-output", "--stylesheet"}
+
 // Validate checks references and values, returning all problems joined.
 func (c *Config) Validate() error {
 	var errs []error
@@ -304,8 +309,11 @@ func (c *Config) Validate() error {
 		if len(n.Sources) == 0 {
 			bad("network %q: at least one source is required", n.Name)
 		}
-		services := 0
+		services, presence := 0, 0
 		for _, s := range n.Sources {
+			if s.Type != "services" {
+				presence++
+			}
 			if s.Traceroute && s.Type != "nmap" {
 				bad("network %q: traceroute is only available for nmap sources", n.Name)
 			}
@@ -326,6 +334,14 @@ func (c *Config) Validate() error {
 				if s.Ref != "" {
 					bad("network %q: services sources take no ref", n.Name)
 				}
+				for _, a := range s.Args {
+					for _, p := range forbiddenServicesArgs {
+						if strings.HasPrefix(a, p) {
+							bad("network %q: services arg %q not allowed (scripts, input lists and output files are not supported)", n.Name, a)
+							break
+						}
+					}
+				}
 			case "nmap":
 				for _, a := range s.Args {
 					for _, f := range forbiddenNmapArgs {
@@ -338,7 +354,11 @@ func (c *Config) Validate() error {
 				bad("network %q: unknown source type %q", n.Name, s.Type)
 			}
 		}
+		if services > 0 && presence == 0 {
+			bad("network %q: a services source needs a presence source (nmap, router or snmp) to find hosts", n.Name)
+		}
 	}
+
 	chans := map[string]bool{}
 	for _, ch := range c.Channels {
 		if ch.Name == "" || chans[ch.Name] {

@@ -52,7 +52,7 @@ The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_G
 ## Quick and detailed scans
 
 - **Quick** (`nmap`, `router`, `snmp` sources) answers "who is online" every few minutes and drives offline detection and alerts.
-- **Detailed** (`services` source, one per network, default every `6h`) runs `nmap -sV -O` on the top 1000 TCP ports of the hosts that are currently online and keeps the latest result per device: open ports, service product/version, OS guess. It is inventory only: it never marks devices online/offline and never sends alerts. Extra nmap args are allowed, e.g. `-p 1-65535` or `--version-light`.
+- **Detailed** (`services` source, one per network, default every `6h`) runs `nmap -sV -O` on the top 1000 TCP ports of the hosts that are currently online and keeps the latest result per device: open ports, service product/version, OS guess. It is inventory only: it never marks devices online/offline and never sends alerts. Expect it to be slow (about 15 minutes for 25 home/IoT devices). Extra nmap args are allowed, e.g. `-p 1-65535` or `--version-light`; NSE scripts (`--script`, `-sC`, `-A`), other target lists (`-i…`) and output files (`-o…`) are rejected. **Scan now** on a network refreshes presence only.
 - Results show in the **Services** column on the Devices page and in the device panel on the map. **Scan details** / **Rescan** scans one device right away (also in networks without a services source); it shows on the Overview page while it runs.
 
 ## Configuration

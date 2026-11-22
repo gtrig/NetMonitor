@@ -89,15 +89,19 @@ func (s *Scheduler) ScanDevice(network, key string) error {
 	}
 	id := network + "|" + key
 	s.mu.Lock()
+	if s.stopped || ctx.Err() != nil {
+		s.mu.Unlock()
+		return ErrNotRunning
+	}
 	if _, busy := s.adhoc[id]; busy {
 		s.mu.Unlock()
 		return nil // already scanning
 	}
 	st := &JobStatus{ID: -1, Network: network, Source: d.Name() + " " + ip.String(), Interval: "once", State: StateQueued}
 	s.adhoc[id] = st
+	s.adhocWG.Add(1) // under mu, so Run's Wait cannot have started
 	s.mu.Unlock()
 
-	s.adhocWG.Add(1)
 	go func() {
 		defer s.adhocWG.Done()
 		defer func() { s.mu.Lock(); delete(s.adhoc, id); s.mu.Unlock() }()
@@ -107,6 +111,9 @@ func (s *Scheduler) ScanDevice(network, key string) error {
 			return
 		}
 		defer func() { <-s.sem }()
+		if ctx.Err() != nil {
+			return
+		}
 		start := time.Now().UTC()
 		s.mu.Lock()
 		st.State, st.Running, st.StartedAt = StateRunning, true, start
@@ -114,7 +121,7 @@ func (s *Scheduler) ScanDevice(network, key string) error {
 		pctx := source.WithProgress(ctx, func(p source.Progress) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			st.Task = p.Task
+			st.Task, st.Progress = p.Task, nil
 			if p.Percent >= 0 {
 				v := p.Percent
 				st.Progress = &v

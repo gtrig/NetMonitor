@@ -211,6 +211,8 @@
       setPath(path.replace(/type$/, "ref"), "");
       if (v !== "nmap") setPath(path.replace(/type$/, "traceroute"), false);
       if (v !== "nmap" && v !== "services") setPath(path.replace(/type$/, "args"), []);
+      if (v === "services") setPath(path.replace(/type$/, "interval"), "6h");
+      else if (getPath(path) === "services") setPath(path.replace(/type$/, "interval"), "15m");
     }
     setPath(path, v);
     markDirty();

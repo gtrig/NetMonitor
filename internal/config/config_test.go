@@ -183,3 +183,16 @@ networks:
 		}
 	}
 }
+
+func TestServicesArgsAndPresence(t *testing.T) {
+	for _, src := range []string{
+		`[{type: nmap}, {type: services, args: ["--script", "vuln"]}]`,
+		`[{type: nmap}, {type: services, args: ["-iL", "/etc/hosts"]}]`,
+		`[{type: nmap}, {type: services, args: ["--oX", "/tmp/x"]}]`,
+		`[{type: services}]`, // no presence source: nothing to scan
+	} {
+		if _, err := Parse([]byte("networks:\n  - {name: lan, cidr: 10.0.0.0/24, sources: " + src + "}\n")); err == nil {
+			t.Errorf("%s: expected error", src)
+		}
+	}
+}

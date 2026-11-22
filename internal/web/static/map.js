@@ -122,14 +122,13 @@
             : `<div class="muted small">no open ports</div>`) +
           `<div class="muted small">scanned ${esc(ago(x.scannedAt))}</div>`;
       return `<div class="member-details">${head}${body}
-        <button class="btn small" type="button" data-scan-member="${esc(m.network)}|${esc(m.key)}">${x ? "Rescan" : "Scan details now"}</button></div>`;
+        <button class="btn small" type="button" data-scan-net="${esc(m.network)}" data-scan-key="${esc(m.key)}">${x ? "Rescan" : "Scan details now"}</button></div>`;
     }).join("");
     box.addEventListener("click", async (e) => {
-      const b = e.target.closest("[data-scan-member]");
+      const b = e.target.closest("[data-scan-key]");
       if (!b) return;
-      const [network, ...rest] = b.dataset.scanMember.split("|");
       try {
-        await api("POST", "/api/details/scan", { network, key: rest.join("|") });
+        await api("POST", "/api/details/scan", { network: b.dataset.scanNet, key: b.dataset.scanKey });
         b.disabled = true; b.textContent = "Scanning…";
         toast("Detailed scan started; progress is on the Overview page");
       } catch (err) { toast("Scan failed: " + err.message); }

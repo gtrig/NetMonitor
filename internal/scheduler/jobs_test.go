@@ -58,6 +58,7 @@ func runSched(t *testing.T, jobs []Job) *Scheduler {
 	done := make(chan struct{})
 	go func() { s.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
+	waitFor(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.runCtx != nil })
 	return s
 }
 

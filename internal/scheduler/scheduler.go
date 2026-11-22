@@ -96,6 +96,7 @@ type Scheduler struct {
 	netLock map[string]*sync.Mutex
 	adhoc   map[string]*JobStatus // on-demand device detail scans, by network|key
 	adhocWG sync.WaitGroup
+	stopped bool
 	runCtx  context.Context // set while Run is active
 
 	// DefaultDetails scans devices on demand in networks without a services job.
@@ -124,7 +125,12 @@ func (s *Scheduler) Run(ctx context.Context) {
 	s.runCtx = ctx
 	s.mu.Unlock()
 	var wg sync.WaitGroup
-	defer s.adhocWG.Wait()
+	defer func() {
+		s.mu.Lock()
+		s.stopped = true // no new device scans from here on
+		s.mu.Unlock()
+		s.adhocWG.Wait()
+	}()
 	for i := range s.jobs {
 		wg.Add(1)
 		go func(i int) {
@@ -146,6 +152,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 			}
 		}(i)
 	}
+	<-ctx.Done() // also with no jobs: on-demand device scans need a running scheduler
 	wg.Wait()
 }
 
@@ -163,11 +170,12 @@ func (s *Scheduler) runGuarded(ctx context.Context, i int) {
 	}
 }
 
-// ScanNow triggers all jobs of network without waiting for them.
+// ScanNow triggers the presence jobs of network without waiting for them (detailed scans run
+// on their own schedule or per device).
 func (s *Scheduler) ScanNow(network string) error {
 	found := false
 	for i, j := range s.jobs {
-		if j.Network.Name == network {
+		if j.Network.Name == network && j.Details == nil {
 			found = true
 			select {
 			case s.trigger[i] <- struct{}{}:
@@ -220,7 +228,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.status {
-		if s.jobs[i].Name() == j.Name() && s.jobs[i].Network.Name == j.Network.Name {
+		if s.jobs[i].Source == j.Source && s.jobs[i].Details == j.Details && s.jobs[i].Network.Name == j.Network.Name {
 			f(&s.status[i])
 		}
 	}
