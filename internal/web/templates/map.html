@@ -30,11 +30,11 @@
   <button class="btn" id="relayout" type="button">Reset view</button>
   <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted"><i class="ml-2 size-2.5 rounded-[2px] bg-router"></i>router <i class="ml-2 size-2.5 rotate-45 scale-80 rounded-[1px] bg-idle"></i>hop <i class="ml-2 size-2.5 rounded-full bg-ok"></i>online <i class="ml-2 size-2.5 rounded-full bg-warn"></i>unreviewed <i class="ml-2 size-2.5 rounded-full border-2 border-idle"></i>offline</span>
 </div>
-<p id="notice" class="mb-2 rounded-md border border-warn px-3 py-1.5 text-xs" role="status" hidden></p>
 <div class="relative h-[calc(100vh-130px)] min-h-[400px] overflow-hidden rounded-t-[10px] border bg-surface">
   <canvas id="decor" class="pointer-events-none absolute inset-0 size-full" aria-hidden="true"></canvas>
   <div id="cy" class="absolute! inset-0" aria-label="Network topology graph"></div>
   <canvas id="labels" class="pointer-events-none absolute inset-0 size-full" aria-hidden="true"></canvas>
+  <p id="notice" class="absolute bottom-3 left-3 z-1 max-w-[calc(100%-24px)] rounded-md border border-warn bg-surface px-3 py-1.5 text-xs" role="status" hidden></p>
   <aside id="panel" class="absolute top-3 right-3 z-1 max-h-[calc(100%-24px)] w-[340px] max-w-[calc(100%-24px)] overflow-y-auto rounded-[10px] border bg-surface p-3.5 shadow-[0_6px_24px_rgb(0_0_0/.15)]" data-can-edit="{{.CanEdit}}" hidden></aside>
 </div>
 {{end}}

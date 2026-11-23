@@ -26,7 +26,7 @@
     { selector: "node[kind != 'net']:selected", style: { "border-color": v("--accent"), "border-width": 3 } },
     { selector: ".off", style: { "display": "none" } },
   ];
-  const cy = cytoscape({ container: document.getElementById("cy"), minZoom: 0.1, maxZoom: 5,
+  const cy = cytoscape({ container: document.getElementById("cy"), wheelSensitivity: 0.3, minZoom: 0.1, maxZoom: 5,
     autoungrabify: true, style: graphStyle() });
 
   let els = [], decor = [], hover = null;
@@ -207,7 +207,7 @@
     const failed = mine.filter((j) => j.source.startsWith("ping:") && j.lastErr);
     const measured = els.some((e) => e.data.rtt);
     const waiting = !measured && mine.some((j) => j.source.startsWith("ping:") || j.source === "nmap");
-    notice.textContent = failed.length ? failed.map((j) => `No ping times for ${j.network}: ${j.lastErr}`).join(" · ")
+    notice.textContent = failed.length ? failed.map((j) => `Ping times for ${j.network} are not updating: ${j.lastErr}`).join(" · ")
       : waiting ? "Waiting for the first ping run" : "";
     notice.hidden = !notice.textContent;
   }
