@@ -134,3 +134,16 @@ func TestPingGivesUpOnDeadRouter(t *testing.T) {
 		t.Fatalf("err %v after %d requests", err, len(f.asked))
 	}
 }
+
+type rowRunner []map[string]string
+
+func (r rowRunner) Run(context.Context, string, ...string) ([]map[string]string, error) {
+	return r, nil
+}
+
+func TestPingErrorRepliesAreNotAnswers(t *testing.T) {
+	p := &Pinger{name: "gw", run: rowRunner{{"host": "10.0.0.254", "time": "986ms", "status": "host unreachable"}}}
+	if got, err := p.Ping(context.Background(), []netip.Addr{ipA}); err != nil || len(got) != 0 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}

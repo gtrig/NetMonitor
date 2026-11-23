@@ -372,3 +372,15 @@ func TestBuildGatewayOf(t *testing.T) {
 	check("machine", "machine:7", mach)
 	check("bare router", "router:core", base)
 }
+
+func TestBuildRTTOfOfflineRowIgnored(t *testing.T) {
+	a, b := device("ip:10.0.0.5", "10.0.0.5"), device("ip:10.0.0.6", "10.0.0.6")
+	b.Online = false
+	ra, rb := model.MemberRef{Network: "lan", Key: a.Key}, model.MemberRef{Network: "lan", Key: b.Key}
+	els := Build(Input{Devices: []model.Device{a, b}, Machines: map[model.MemberRef]int64{ra: 1, rb: 1},
+		Pings: map[model.MemberRef]model.Ping{ra: {RTT: 40 * time.Millisecond, OK: true}, rb: {RTT: time.Millisecond, OK: true}}})
+	rtt := nodes(els)["machine:1"]["rtt"].(map[string]rttJSON)
+	if rtt["lan"].Ms != 40 {
+		t.Fatalf("rtt = %+v", rtt)
+	}
+}

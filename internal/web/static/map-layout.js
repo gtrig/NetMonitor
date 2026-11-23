@@ -3,10 +3,37 @@
   const MIN = 0.1, MAX = 300, TICKS = [0.1, 1, 10, 100];
   const R0 = 55, OUTER_GAP = 34, LABEL_PAD = 70, GROUP_GAP = 70;
   const LANE = { left: 120, width: 900, strip: 80, row: 48, pad: 26, minGap: 74 };
-  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
   // frac places ms on a log scale from 0 (0.1 ms or less) to 1 (300 ms or more).
   const frac = (ms) => Math.min(1, Math.max(0, Math.log(Math.max(ms, MIN) / MIN) / Math.log(MAX / MIN)));
+
+  // directions gives each id its own angle, taken from a hash of the id so that devices coming
+  // and going leave the others in place. An id whose slot is taken gets the next free one.
+  function directions(ids) {
+    let slots = 64;
+    while (slots < ids.length * 2) slots *= 2;
+    const used = new Set(), out = new Map();
+    for (const id of ids) {
+      let h = 2166136261;
+      for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+      h = Math.imul(h ^ (h >>> 16), 2246822507); h ^= h >>> 13;
+      let s = (h >>> 0) % slots;
+      while (used.has(s)) s = (s + 1) % slots;
+      used.add(s);
+      out.set(id, -Math.PI / 2 + (2 * Math.PI * s) / slots);
+    }
+    return out;
+  }
+
+  // loads numbers graph requests: only the newest counts, and a wish to refit outlives requests
+  // that were overtaken or failed.
+  function loads() {
+    let seq = 0, refit = false;
+    return {
+      start(fresh) { refit ||= fresh; return ++seq; },
+      finish(n) { if (n !== seq) return null; const fresh = refit; refit = false; return { fresh }; },
+    };
+  }
 
   const nodesOf = (els) => els.filter((e) => e.group === "nodes").map((e) => e.data);
   const byText = (a, b) => a.localeCompare(b, undefined, { numeric: true });
@@ -24,14 +51,17 @@
     const out = els.map((e) => {
       const d = { ...e.data };
       if (e.group === "edges") { d.source = fix(d.source); d.target = fix(d.target); }
-      else if (d.kind === "network") { d.network = d.label; d.id = fix(d.id); d.kind = "netmon"; d.label = "netmon"; }
+      else if (d.kind === "network") { d.network = d.label; d.id = fix(d.id); d.kind = "netmon"; d.label = d.origin = "netmon"; }
       return { ...e, data: d };
     });
     const gs = groups(out);
     const have = new Map(nodesOf(out).map((d) => [d.id, d]));
     for (const g of gs) {
       if (!g.centre.startsWith("netmon:") || have.has(g.centre)) continue;
-      const data = { id: g.centre, kind: "netmon", label: "netmon", network: g.network };
+      const data = { id: g.centre, kind: "netmon", label: "netmon", origin: "netmon", network: g.network };
+      // A router serving several networks is drawn in one of them; its name stands in here.
+      const router = nodesOf(out).find((d) => (d.gatewayOf || []).includes(g.network));
+      if (router) data.label = data.origin = router.label;
       if (have.has("net:" + g.network)) data.parent = "net:" + g.network;
       out.push({ group: "nodes", data });
       have.set(data.id, data);
@@ -93,7 +123,9 @@
   }
 
   // Each drawer lays a group out around (0, 0) and returns its half extents.
-  function circle(mode, g, nodes, o) {
+  function circle(mode, g, shown, o) {
+    // Hidden devices keep their place, so hiding or losing one moves no other.
+    const nodes = g.nodes, drawn = new Set(shown.map((d) => d.id));
     const r1 = Math.max(190, 120 + nodes.length * 8), outer = r1 + OUTER_GAP;
     const pos = { [g.centre]: { x: 0, y: 0 } }, decor = [];
     const radius = (d) => {
@@ -101,7 +133,7 @@
       const ms = msOf(d, g.network);
       return ms == null ? outer : R0 + frac(ms) * (r1 - R0);
     };
-    const put = (d, a) => { const r = radius(d); pos[d.id] = { x: r * Math.cos(a), y: r * Math.sin(a) }; };
+    const put = (d, a) => { if (!drawn.has(d.id)) return; const r = radius(d); pos[d.id] = { x: r * Math.cos(a), y: r * Math.sin(a) }; };
     if (mode === "sectors") {
       const ps = ports(g, nodes), full = 2 * Math.PI, min = Math.min(0.35, full / Math.max(1, ps.length));
       const raw = ps.map(([, ds]) => Math.max(min, (full * ds.length) / nodes.length));
@@ -117,7 +149,8 @@
         a += w;
       });
     } else {
-      nodes.forEach((d, i) => put(d, -Math.PI / 2 + i * (o.distance ? GOLDEN : (2 * Math.PI) / nodes.length)));
+      const dir = directions(nodes.map((d) => d.id));
+      nodes.forEach((d, i) => put(d, o.distance ? dir.get(d.id) : -Math.PI / 2 + (2 * Math.PI * i) / nodes.length));
     }
     if (o.distance) {
       for (const t of TICKS) decor.push({ network: g.network, kind: "ring", x: 0, y: 0, r: R0 + frac(t) * (r1 - R0), label: t + " ms" });
@@ -210,6 +243,6 @@
     return { positions, decor };
   }
 
-  const api = { frac, prepare, groups, layout };
+  const api = { frac, prepare, groups, layout, loads };
   if (typeof module !== "undefined" && module.exports) module.exports = api; else root.MapLayout = api;
 })(typeof window !== "undefined" ? window : globalThis);

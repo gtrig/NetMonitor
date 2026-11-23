@@ -439,7 +439,7 @@ func deviceData(g *group, pings map[model.MemberRef]model.Ping) map[string]any {
 			lastSeen = d.LastSeen
 		}
 		members = append(members, memberJSON{d.Network, d.Key, ip, d.MAC, d.Online, d.Port})
-		if p := pings[model.MemberRef{Network: d.Network, Key: d.Key}]; p.OK {
+		if p := pings[model.MemberRef{Network: d.Network, Key: d.Key}]; p.OK && d.Online {
 			rtt[d.Network] = rttJSON{float64(p.RTT.Microseconds()) / 1000, p.At, p.Origin}
 		}
 	}

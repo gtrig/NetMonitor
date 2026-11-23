@@ -131,3 +131,45 @@ test("prepare: lines to a network end at its centre, and a moved gateway keeps i
   assert.deepEqual(ends.sort(), ["gw>netmon:vpn", "m>gw"]);
   assert.equal(els.find((e) => e.data.id === "gw").data.parent, "net:lan");
 });
+
+const angles = (els, o) => { const { positions: p } = run("radar", els, o); return Object.fromEntries(Object.keys(p).map((id) => [id, Math.atan2(p[id].y - p.gw.y, p[id].x - p.gw.x)])); };
+const twenty = (skip) => Array.from({ length: 20 }, (_, i) => dev("ip:10.0.0." + (i + 2), i + 1, i === skip ? { status: "offline" } : {}));
+
+test("radar: one device going offline moves no other, even with offline hidden", () => {
+  for (const mode of ["radar", "sectors"]) {
+    const a = run(mode, lan(...twenty(-1)), { offline: false }).positions, b = run(mode, lan(...twenty(4)), { offline: false }).positions;
+    for (const id of Object.keys(b)) assert.ok(near(a[id].x, b[id].x) && near(a[id].y, b[id].y), mode + " " + id);
+  }
+});
+
+test("radar: a new device leaves nearly all others in place", () => {
+  const a = angles(lan(...twenty(-1))), b = angles(lan(dev("ip:10.0.0.1", 5), ...twenty(-1)));
+  const moved = Object.keys(a).filter((id) => Math.abs(a[id] - b[id]) > 1e-6);
+  assert.ok(moved.length <= 2, moved.join());
+});
+
+test("radar: no two devices share a direction", () => {
+  for (const n of [5, 30, 100, 250]) {
+    const els = lan(...Array.from({ length: n }, (_, i) => dev(`mac:aa:00:00:00:00:${i}`, 5)));
+    const a = Object.entries(angles(els)).filter(([id]) => id !== "gw").map(([, v]) => v.toFixed(6));
+    assert.equal(new Set(a).size, n);
+  }
+});
+
+test("a second network of one router names that router on its marker", () => {
+  const els = L.prepare([net("a"), net("b"), gw("gw", "a", { label: "core", gatewayOf: ["a", "b"], networks: ["a", "b"] })]);
+  const m = els.find((e) => e.data.id === "netmon:b").data;
+  assert.equal(m.label, "core"); assert.equal(m.origin, "core");
+  const v = L.prepare([net("v")]).find((e) => e.data.id === "netmon:v").data;
+  assert.equal(v.label, "netmon"); assert.equal(v.origin, "netmon");
+});
+
+test("loads: a refresh overtaking a network switch still refits, and failures keep the request", () => {
+  const q = L.loads();
+  const sw = q.start(true), refresh = q.start(false);
+  assert.equal(q.finish(sw), null);
+  assert.deepEqual(q.finish(refresh), { fresh: true });
+  assert.deepEqual(q.finish(q.start(false)), { fresh: false });
+  q.start(true); // fails: never finished
+  assert.deepEqual(q.finish(q.start(false)), { fresh: true });
+});

@@ -361,15 +361,17 @@
   cy.on("mouseout", "node", () => { hover = null; repaint(); });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { cy.style(styleNow()); repaint(); });
 
-  let seq = 0;
+  const queue = MapLayout.loads();
   // load fetches the graph and the ping jobs; a newer load wins over a slower older one.
   async function load({ fresh = true } = {}) {
-    const mine = ++seq, network = netSel.value;
+    const ticket = queue.start(fresh), network = netSel.value;
     const [got, jobs] = await Promise.all([
       api("GET", "/api/graph" + (network ? "?network=" + encodeURIComponent(network) : "")),
       api("GET", "/api/jobs").catch(() => []),
     ]);
-    if (mine !== seq) return;
+    const turn = queue.finish(ticket);
+    if (!turn) return;
+    fresh = turn.fresh;
     graph = got;
     els = classic() ? graph : MapLayout.prepare(graph);
     const open = current && els.some((e) => e.data.id === current.id());
@@ -462,7 +464,7 @@
         <a class="btn btn-sm" href="/map?network=${encodeURIComponent(d.network)}">Only this network</a>
         ${ext("/map?network=" + encodeURIComponent(d.network), "New tab")}</div>`;
     } else if (d.kind !== "device") {
-      panel.innerHTML = `<button class="btn btn-sm close float-right">×</button><h2>${esc(d.label)}</h2><p class="my-2 text-muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind === "netmon" ? "ping times here are measured by netmon" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>` +
+      panel.innerHTML = `<button class="btn btn-sm close float-right">×</button><h2>${esc(d.label)}</h2><p class="my-2 text-muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind === "netmon" ? "ping times here are measured by " + (d.origin || "netmon") : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>` +
         (d.ip ? `<div class="mt-2 mb-1 flex flex-wrap gap-1.5">${openLinks([`http://${hostOf(d.ip)}/`])}
           <button class="btn btn-sm" type="button" data-act="copy" data-ip="${esc(d.ip)}">Copy IP</button></div>` : "");
     } else {

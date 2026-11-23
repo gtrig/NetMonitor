@@ -72,6 +72,9 @@ func (p *Pinger) Ping(ctx context.Context, addrs []netip.Addr) (map[netip.Addr]t
 		inRow = 0
 		var times []time.Duration
 		for _, r := range rows {
+			if r["status"] != "" {
+				continue // timeout, or another host's error reply
+			}
 			if d, ok := parsePingTime(r["time"]); ok {
 				times = append(times, d)
 			}
