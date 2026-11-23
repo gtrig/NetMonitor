@@ -117,4 +117,9 @@ func TestSettingsPageRenders(t *testing.T) {
 	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "<h1>Settings</h1>") {
 		t.Fatalf("%d", rr.Code)
 	}
+	for _, tab := range []string{"networks", "sources", "notifications", "system"} {
+		if !strings.Contains(rr.Body.String(), `aria-controls="panel-`+tab+`"`) || !strings.Contains(rr.Body.String(), `id="panel-`+tab+`"`) {
+			t.Errorf("missing tab or panel %q", tab)
+		}
+	}
 }

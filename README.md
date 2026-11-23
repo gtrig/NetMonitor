@@ -29,7 +29,7 @@ The container uses `network_mode: host` and the `NET_RAW`/`NET_ADMIN` capabiliti
 
 ## Settings page
 
-Networks, routers, SNMP targets, notification channels and rules can be managed on the **Settings** page. Saving writes `config/config.yaml` and applies the change immediately (no restart); devices and history are kept.
+Networks, routers, SNMP targets, notification channels and rules can be managed on the **Settings** page, under the **Networks**, **Data sources** and **Notifications** tabs; one **Save changes** covers them all. **System** has the file reload and leftover data. Saving writes `config/config.yaml` and applies the change immediately (no restart); devices and history are kept.
 
 - **Editing requires `auth:`** in the config (otherwise the page is read-only), since settings control where alerts go.
 - `listen`, `data_dir` and `auth` are only changed in the file (restart to apply), so a UI change can't lock you out.
@@ -49,7 +49,7 @@ The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_G
 - **Traceroute.** Tick **Traceroute** on an nmap source (or set `traceroute: true`). nmap then records the routers on the path to each host, which draws how your networks connect, e.g. LAN → VPN hub → remote LAN. Hop addresses that netmon doesn't otherwise know show as small grey diamonds.
 - **Machines.** One box with addresses in several networks (a router, a VPN endpoint) is found once per network. On the **Devices** page, tick its rows and click **Merge selected into one machine**. The map then shows it as one node with all its addresses, sitting between the networks it joins. **Split** undoes it. The same MAC address seen in two networks is drawn as one node automatically.
 - **Renames keep data.** Renaming a network on the Settings page moves its devices and history to the new name.
-- **Cleanup.** Data under network names that are no longer configured is listed on the Settings page: **Merge into** a configured network, or **Delete** it (events are kept). **Forget** on the Devices page removes a single device; it comes back if it is seen again.
+- **Cleanup.** Data under network names that are no longer configured is listed under **System** on the Settings page: **Merge into** a configured network, or **Delete** it (events are kept). **Forget** on the Devices page removes a single device; it comes back if it is seen again.
 - **Scan jobs.** The Overview page shows every scan job live: running (with nmap's phase and percentage), queued (waiting for one of 4 slots) or idle (with a countdown to the next run), plus the last duration and error, and **Scan now** per job. Remote networks usually spend most of a scan on reverse DNS; add `-n` to the nmap args to skip it if you don't need names.
 
 ## Quick and detailed scans
