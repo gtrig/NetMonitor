@@ -486,6 +486,7 @@
         <dt class="text-muted">Hostname</dt><dd class="min-w-0 break-all">${esc(d.hostname)}</dd><dt class="text-muted">Port</dt><dd class="mono min-w-0 break-all">${esc(d.port)}</dd>
         <dt class="text-muted">Network</dt><dd class="min-w-0 break-all">${esc(d.network)}</dd><dt class="text-muted">Ping</dt><dd class="min-w-0 break-words">${pingText(d)}</dd><dt class="text-muted">Last seen</dt><dd class="min-w-0 break-all">${esc(ago(d.lastSeen))}</dd>
         <dt class="text-muted">First seen</dt><dd class="min-w-0 break-all">${esc(ago(d.firstSeen))}</dd></dl>${memberList}
+        <h3 class="sub">Ping history</h3>${(members.length ? members : [{ network: d.network, key: d.key }]).map((m) => `<a class="mb-2 block hover:no-underline" href="/device?network=${encodeURIComponent(m.network)}&key=${encodeURIComponent(m.key)}" title="Open the full history">${members.length > 1 ? `<span class="text-xs mono">${esc(m.ip)}</span>` : ""}<div class="ping-mini" ${ref(m)}></div></a>`).join("")}
         <div class="details-box"><span class="text-muted text-xs">Loading services…</span></div>
         <form class="mt-3 grid gap-2"><input class="label control" name="label" placeholder="Label" value="${esc(n.data("userLabel") || "")}" aria-label="Label">
         <label class="check-label"><input type="checkbox" name="known" ${d.known ? "checked" : ""}> known device</label>
@@ -506,6 +507,7 @@
       });
     }
     if (d.kind === "device") loadDetails(d);
+    panel.querySelectorAll(".ping-mini").forEach((el) => PingChart.mini(el, el.dataset).catch(() => { el.textContent = "ping history unavailable"; }));
     panel.querySelector(".close").addEventListener("click", () => { panel.hidden = true; cy.elements().unselect(); current = null; });
     panel.hidden = false;
   }
