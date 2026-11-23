@@ -92,6 +92,22 @@ var migrations = []string{
 	);
 	CREATE INDEX ping_history_device ON ping_history(network, key, at);
 	CREATE INDEX ping_history_at ON ping_history(at);`,
+	`CREATE TABLE job_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		network TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		source TEXT NOT NULL,
+		key TEXT NOT NULL,
+		trigger TEXT NOT NULL,
+		at INTEGER NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		outcome TEXT NOT NULL,
+		message TEXT NOT NULL
+	);
+	CREATE INDEX job_runs_network ON job_runs(network, id);
+	CREATE INDEX job_runs_outcome ON job_runs(outcome, id);
+	CREATE INDEX job_runs_kind ON job_runs(kind, id);
+	CREATE INDEX job_runs_at ON job_runs(at);`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.

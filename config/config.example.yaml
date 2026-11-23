@@ -5,6 +5,10 @@ listen: 0.0.0.0:8080        # NETMON_LISTEN overrides
 #   username: admin
 #   password: ${NETMON_UI_PASSWORD}
 
+# workers:
+#   scans: 4                # how many scans run in parallel
+#   detailed: 2             # how many of them may be detailed scans (must be lower)
+
 routers:
   - name: core
     type: mikrotik
@@ -26,6 +30,7 @@ networks:
     # exclude: [192.168.88.254]
     # offline_after: 15m   # default: a device is offline once no source saw it in its
     #                      # latest scan and one source has missed it for 3 of its intervals
+    # auto_details: false  # do not scan new devices in detail automatically
     sources:
       - {type: router, ref: core, interval: 1m}
       - {type: snmp, ref: core-snmp, interval: 5m}

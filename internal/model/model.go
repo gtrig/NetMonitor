@@ -158,3 +158,34 @@ type PingPoint struct {
 	RTT    time.Duration
 	OK     bool // false: no answer
 }
+
+// Kinds of job runs.
+const (
+	RunPresence = "presence" // who is online (router, snmp, nmap)
+	RunDetails  = "details"  // a detailed scan of a whole network
+	RunDevice   = "device"   // a detailed scan of one device
+	RunPing     = "ping"
+)
+
+// Outcomes of job runs.
+const (
+	OutcomeOK          = "ok"
+	OutcomeFailed      = "failed"
+	OutcomeCancelled   = "cancelled"   // while waiting
+	OutcomeSkipped     = "skipped"     // nothing to scan any more
+	OutcomeInterrupted = "interrupted" // by a restart or settings save
+)
+
+// JobRun is a finished job run.
+type JobRun struct {
+	ID       int64
+	Network  string
+	Kind     string
+	Source   string
+	Key      string    // device key (RunDevice only)
+	Trigger  string    // manual, scheduled or automatic
+	At       time.Time // when it finished
+	Duration time.Duration
+	Outcome  string
+	Message  string // what was found, or the error
+}

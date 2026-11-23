@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"time"
 
@@ -25,11 +26,11 @@ type Pinger interface {
 func pingable(d model.Device) bool { return d.Online && d.IP.Is4() }
 
 // runPings pings the online IPv4 devices of network. It never touches presence state and creates
-// no events.
-func (s *Scheduler) runPings(ctx context.Context, network string, p Pinger) error {
+// no events. It returns a summary.
+func (s *Scheduler) runPings(ctx context.Context, network string, p Pinger) (string, error) {
 	devs, err := s.st.Devices(ctx, network)
 	if err != nil {
-		return err
+		return "", err
 	}
 	asked := map[netip.Addr]bool{}
 	var addrs []netip.Addr
@@ -40,13 +41,13 @@ func (s *Scheduler) runPings(ctx context.Context, network string, p Pinger) erro
 		}
 	}
 	if len(addrs) == 0 {
-		return nil
+		return "no devices to ping", nil
 	}
 	rtts, err := p.Ping(ctx, addrs)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return s.recordRTTs(ctx, network, p.Origin(), rtts, func(a netip.Addr) bool { return asked[a] })
+	return fmt.Sprintf("%d of %s answered", len(rtts), count(len(addrs), "device")), s.recordRTTs(ctx, network, p.Origin(), rtts, func(a netip.Addr) bool { return asked[a] })
 }
 
 // recordRTTs stores one run under the devices' current keys, which may have changed while it ran.

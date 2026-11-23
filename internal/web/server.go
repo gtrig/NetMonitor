@@ -39,6 +39,7 @@ type Runtime struct {
 		ScanNow(network string) error
 		ScanJob(id int) error
 		ScanDevice(network, key string) error
+		Cancel(queueID string) error
 		Status() []scheduler.JobStatus
 	}
 	Notifier interface {
@@ -86,13 +87,22 @@ var funcs = template.FuncMap{
 		}
 		return t.Local().Format("2006-01-02")
 	},
+	"dur": func(d time.Duration) string {
+		switch {
+		case d == 0:
+			return ""
+		case d < 10*time.Second:
+			return d.Round(100 * time.Millisecond).String()
+		}
+		return d.Round(time.Second).String()
+	},
 	"ts": func(t time.Time) string { return t.Local().Format("2006-01-02 15:04:05") },
 }
 
 // New returns the HTTP handler.
 func New(d Deps) http.Handler {
 	s := &server{Deps: d, pages: map[string]*template.Template{}}
-	for _, p := range []string{"dashboard", "map", "devices", "device", "events", "settings"} {
+	for _, p := range []string{"dashboard", "map", "devices", "device", "events", "jobs", "settings"} {
 		s.pages[p] = template.Must(template.New("layout.html").Funcs(funcs).
 			ParseFS(templateFS, "templates/layout.html", "templates/"+p+".html"))
 	}
@@ -105,6 +115,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /devices", s.devicesPage)
 	mux.HandleFunc("GET /device", s.devicePage)
 	mux.HandleFunc("GET /events", s.eventsPage)
+	mux.HandleFunc("GET /jobs", s.jobsPage)
 	mux.HandleFunc("GET /api/networks", s.apiNetworks)
 	mux.HandleFunc("GET /api/graph", s.apiGraph)
 	mux.HandleFunc("GET /api/devices", s.apiDevices)
@@ -123,6 +134,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/details", s.apiDetails)
 	mux.HandleFunc("POST /api/details/scan", s.apiScanDetails)
 	mux.HandleFunc("POST /api/jobs/{id}/scan", s.apiScanJob)
+	mux.HandleFunc("POST /api/queue/cancel", s.apiCancelScan)
 	mux.HandleFunc("POST /api/notify/test/{channel}", s.apiNotifyTest)
 	mux.HandleFunc("GET /settings", s.page("settings", "Settings"))
 	mux.HandleFunc("GET /api/settings", s.apiGetSettings)
@@ -258,7 +270,7 @@ func (s *server) networks(ctx context.Context) ([]networkSummary, error) {
 			}
 		}
 		for _, j := range status {
-			if j.Network == n.Name {
+			if j.Network == n.Name && j.ID >= 0 { // not single-device scans
 				ns.Jobs = append(ns.Jobs, j)
 			}
 		}
@@ -414,6 +426,25 @@ func (s *server) apiJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, st)
 }
 
+func (s *server) apiCancelScan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	switch err := s.rt().Scheduler.Cancel(req.ID); {
+	case errors.Is(err, scheduler.ErrNotQueued):
+		http.Error(w, "this scan is no longer waiting", http.StatusConflict)
+	case err != nil:
+		serverError(w, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func (s *server) apiScanJob(w http.ResponseWriter, r *http.Request) {
 	// network/source guard against an id from before a reload pointing at another job.
 	id, err := strconv.Atoi(r.PathValue("id"))
@@ -453,16 +484,18 @@ func (s *server) apiNotifyTest(w http.ResponseWriter, r *http.Request) {
 // ---- pages ----
 
 type pageData struct {
-	Title    string
-	Active   string
-	Networks []networkSummary
-	Devices  []deviceRow
-	Device   *deviceView
-	Events   []model.Event
-	Channels []config.Channel
-	Network  string
-	Older    int64
-	CanEdit  bool
+	Running, Waiting int // scans in the queue (dashboard)
+	Title            string
+	Active           string
+	Networks         []networkSummary
+	Devices          []deviceRow
+	Device           *deviceView
+	Events           []model.Event
+	Jobs             *jobsView
+	Channels         []config.Channel
+	Network          string
+	Older            int64
+	CanEdit          bool
 }
 
 func (s *server) render(w http.ResponseWriter, page string, d pageData) {
@@ -495,7 +528,16 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	s.render(w, "dashboard", pageData{Title: "Overview", Networks: nets, Events: evs, Channels: s.rt().Config.Channels})
+	d := pageData{Title: "Overview", Networks: nets, Events: evs, Channels: s.rt().Config.Channels}
+	for _, j := range s.rt().Scheduler.Status() {
+		switch {
+		case j.Position > 0:
+			d.Waiting++
+		case j.Running && j.Priority != "":
+			d.Running++
+		}
+	}
+	s.render(w, "dashboard", d)
 }
 
 func (s *server) devicesPage(w http.ResponseWriter, r *http.Request) {

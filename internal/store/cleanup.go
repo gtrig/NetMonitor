@@ -52,6 +52,7 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 			`UPDATE OR IGNORE device_pings SET network = ?2 WHERE network = ?1`,
 			`DELETE FROM device_pings WHERE network = ?1`,
 			`UPDATE ping_history SET network = ?2 WHERE network = ?1`,
+			`UPDATE job_runs SET network = ?2 WHERE network = ?1`,
 		}
 		for _, q := range stmts {
 			if _, err := tx.ExecContext(ctx, q, from, to); err != nil {
@@ -85,7 +86,7 @@ func (s *Store) DataNetworks(ctx context.Context) ([]NetworkData, error) {
 	return out, rows.Err()
 }
 
-// DeleteNetworkData removes the devices, links, state and machine membership of a network.
+// DeleteNetworkData removes the devices, links, state, job history and machine membership of a network.
 // Its events are kept.
 func (s *Store) DeleteNetworkData(ctx context.Context, name string) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
@@ -97,6 +98,7 @@ func (s *Store) DeleteNetworkData(ctx context.Context, name string) error {
 			`DELETE FROM device_details WHERE network = ?`,
 			`DELETE FROM device_pings WHERE network = ?`,
 			`DELETE FROM ping_history WHERE network = ?`,
+			`DELETE FROM job_runs WHERE network = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, name); err != nil {
 				return err

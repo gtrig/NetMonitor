@@ -13,6 +13,7 @@ const Masked = "••••••"
 
 // Editable is the part of the config the settings UI edits.
 type Editable struct {
+	Workers     *config.Workers     `json:"workers"` // nil: keep what is stored
 	Networks    []config.Network    `json:"networks"`
 	Routers     []config.Router     `json:"routers"`
 	SNMPTargets []config.SNMPTarget `json:"snmp_targets"`
@@ -48,7 +49,9 @@ func channelSecrets(c *config.Channel) []*string {
 
 // Mask returns the editable sections of raw with secrets hidden and OriginalName set.
 func Mask(raw *config.Config) Editable {
+	workers := raw.Workers
 	e := Editable{
+		Workers:     &workers,
 		Networks:    nonNil(slices.Clone(raw.Networks)),
 		Routers:     nonNil(slices.Clone(raw.Routers)),
 		SNMPTargets: nonNil(slices.Clone(raw.SNMPTargets)),
@@ -125,6 +128,9 @@ func merge[T any](in, prev []T, name, origName func(*T) string, secrets func(*T)
 // secrets the UI did not change. raw is not modified.
 func Apply(raw *config.Config, e Editable) *config.Config {
 	out := *raw
+	if e.Workers != nil {
+		out.Workers = *e.Workers
+	}
 	out.Networks = slices.Clone(e.Networks)
 	for i := range out.Networks {
 		out.Networks[i].OriginalName = ""

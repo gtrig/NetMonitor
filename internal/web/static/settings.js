@@ -1,4 +1,4 @@
-// Settings page: edits networks, routers, SNMP targets, channels and rules, then PUTs them.
+// Settings page: edits networks, routers, SNMP targets, channels, rules and workers, then PUTs them.
 (() => {
   const MASKED = "••••••";
   const root = document.getElementById("settings");
@@ -8,8 +8,9 @@
   let meta = {};         // can_edit, event_types, path
   const bar = document.getElementById("savebar");
   const staleEl = document.getElementById("stale");
-  const GROUPS = { networks: ["networks"], sources: ["routers", "snmp_targets"], notifications: ["channels", "rules"] };
+  const GROUPS = { networks: ["networks"], sources: ["routers", "snmp_targets"], notifications: ["channels", "rules"], system: ["workers"] };
   const KINDS = Object.values(GROUPS).flat();
+  const LISTS = KINDS.filter((k) => k !== "workers");
   const groupOf = (kind) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(kind));
   const open = new Set();  // expanded items (objects in state)
   let saved = {};          // JSON of each kind as last loaded
@@ -25,9 +26,11 @@
   function refreshChrome() {
     for (const g of Object.keys(GROUPS)) {
       const tab = document.getElementById(`tab-${g}`);
-      const count = tab.querySelector(".tab-count");
-      count.hidden = !state;
-      count.textContent = state ? GROUPS[g].reduce((n, k) => n + state[k].length, 0) : "";
+      if (g !== "system") { // its count is the stale data
+        const count = tab.querySelector(".tab-count");
+        count.hidden = !state;
+        count.textContent = state ? GROUPS[g].reduce((n, k) => n + state[k].length, 0) : "";
+      }
       tab.querySelector(".tab-dot").hidden = !changed(g);
     }
     bar.hidden = !isDirty();
@@ -66,14 +69,15 @@
     const data = await res.json();
     const key = (kind, item, i) => `${kind}/${item.name ?? i}`;
     const wasOpen = new Set();
-    if (state) for (const k of KINDS) state[k].forEach((it, i) => { if (open.has(it)) wasOpen.add(key(k, it, i)); });
+    if (state) for (const k of LISTS) state[k].forEach((it, i) => { if (open.has(it)) wasOpen.add(key(k, it, i)); });
     meta = { can_edit: data.can_edit, event_types: data.event_types, path: data.path };
-    state = Object.fromEntries(KINDS.map((k) => [k, data[k] || []]));
+    state = Object.fromEntries(LISTS.map((k) => [k, data[k] || []]));
+    state.workers = data.workers || {};
     for (const n of state.networks) { n.sources = n.sources || []; n.exclude = n.exclude || []; }
     open.clear();
     for (const k of KINDS) {
       saved[k] = JSON.stringify(state[k]);
-      state[k].forEach((it, i) => { if (wasOpen.has(key(k, it, i))) open.add(it); });
+      if (k !== "workers") state[k].forEach((it, i) => { if (wasOpen.has(key(k, it, i))) open.add(it); });
     }
     typing = null;
     document.getElementById("loading").hidden = true;
@@ -86,7 +90,7 @@
   const ro = () => (meta.can_edit ? "" : "disabled");
   function text(path, label, value, opts = {}) {
     return `<label class="field ${opts.cls || ""}"><span>${esc(label)}</span>
-      <input data-path="${path}" value="${esc(value)}" placeholder="${esc(opts.ph || "")}" ${opts.type ? `type="${opts.type}"` : ""} ${ro()}></label>`;
+      <input data-path="${path}" value="${esc(value)}" placeholder="${esc(opts.ph || "")}" ${opts.attrs || ""} ${opts.type ? `type="${opts.type}"` : ""} ${ro()}></label>`;
   }
   function check(path, label, value) {
     return `<label class="field field-check"><input type="checkbox" data-path="${path}" ${value ? "checked" : ""} ${ro()}><span>${esc(label)}</span></label>`;
@@ -156,6 +160,7 @@
           ${text(`networks.${i}.exclude`, "Exclude IPs", n.exclude.join(", "), { ph: "comma separated" })}
           ${text(`networks.${i}.offline_after`, "Offline after", n.offline_after, { ph: "auto (3 missed scans)" })}
         </div>
+        ${check(`networks.${i}.auto_details`, "Scan new devices in detail automatically (open ports, services, OS)", n.auto_details ?? true)}
         <div class="mt-3 grid justify-items-start gap-2"><span class="sub">Discovery sources</span>${sources}
           ${meta.can_edit ? `<button class="btn btn-sm" data-add-source="${i}" type="button">Add source</button>` : ""}</div>`);
     }).join("");
@@ -222,7 +227,17 @@
       ${check(`rules.${i}.only_unknown`, "Only devices not marked as known", r.only_unknown)}</div>`)).join("");
   }
 
+  function renderWorkers() {
+    root.querySelector('[data-section="workers"]').innerHTML = `<h2>Scan workers</h2><div class="card">
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">
+        ${text("workers.scans", "Parallel scans", state.workers.scans || "", { ph: "4", type: "number", attrs: 'min="2" max="64"' })}
+        ${text("workers.detailed", "Parallel detailed scans", state.workers.detailed || "", { ph: "2", type: "number", attrs: 'min="1" max="63"' })}
+      </div>
+      <p class="mt-2 max-w-[75ch] text-xs text-muted">How many scans run at once; the rest wait in the queue on the Jobs page. Detailed scans are slow and use up to their own limit, which must be lower so a worker is always free to check who is online. Empty uses the default. Saving restarts the scans that are running.</p></div>`;
+  }
+
   const renderers = {
+    workers: renderWorkers,
     networks: () => section("networks", "Networks", "Add network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored. nmap finds who is online; services runs a slow detailed scan (open ports, service versions, OS) of the hosts that are online.", "No networks yet. Add one to start discovering devices."),
     routers: () => section("routers", "Routers", "Add router", renderRouters(), "MikroTik routers, read over the RouterOS API. Use a read-only API user. Secrets can be written as ${NAME} to keep them in .env.", "No routers yet."),
     snmp_targets: () => section("snmp_targets", "SNMP targets", "Add SNMP target", renderSNMP(), "", "No SNMP targets yet."),
@@ -238,7 +253,7 @@
     if (el) el.innerHTML = summary(kind, i);
   }
   // Sections that show the names of another section's items.
-  const dependents = { networks: ["rules"], routers: ["networks"], snmp_targets: ["networks"], channels: ["rules"], rules: [] };
+  const dependents = { networks: ["rules"], routers: ["networks"], snmp_targets: ["networks"], channels: ["rules"], rules: [], workers: [] };
 
   // ---- state updates ----
   function setPath(path, value) {
@@ -264,7 +279,7 @@
   }
 
   const listFields = /\.(exclude|to)$/;
-  const numFields = /\.(port|smtp_port)$/;
+  const numFields = /\.(port|smtp_port|scans|detailed)$/;
   // Re-render after focus has moved (e.g. Tab), then put focus back on the same field.
   function renderKeepingFocus(kinds) {
     setTimeout(() => {

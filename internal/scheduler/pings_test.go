@@ -143,12 +143,12 @@ func TestThresholdsIgnorePing(t *testing.T) {
 
 func TestPingJobDoesNotTakeASlot(t *testing.T) {
 	s, _, _, _ := pingSetup(t, &fakePinger{})
-	for range MaxConcurrent {
-		s.sem <- struct{}{}
+	for range s.queue.scans {
+		s.queue.enter("busy", false, PrioManual)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	s.runGuarded(ctx, 0)
+	s.runGuarded(ctx, 0, false)
 	if s.Status()[0].LastOK.IsZero() {
 		t.Fatal("ping job waited for a collection slot")
 	}

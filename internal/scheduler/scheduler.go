@@ -2,11 +2,13 @@
 package scheduler
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"slices"
 	"sync"
 	"time"
 
@@ -33,9 +35,6 @@ const (
 	StateQueued  = "queued" // waiting for a free collection slot
 	StateRunning = "running"
 )
-
-// MaxConcurrent is the maximum number of collections running at once.
-const MaxConcurrent = 4
 
 // EventSink receives new events (the notification dispatcher).
 type EventSink interface{ Enqueue([]model.Event) }
@@ -69,7 +68,10 @@ func (j Job) Name() string {
 
 // JobStatus describes a job: its current state and its last run.
 type JobStatus struct {
-	ID           int       `json:"id"`
+	ID           int       `json:"id"` // -1: a detailed scan of one device
+	QueueID      string    `json:"queueId"`
+	Position     int       `json:"position,omitempty"` // in the queue, 1 = next
+	Priority     string    `json:"priority,omitempty"` // while queued or running
 	Network      string    `json:"network"`
 	Source       string    `json:"source"`
 	Interval     string    `json:"interval"`
@@ -93,15 +95,16 @@ type Scheduler struct {
 	res     *enrich.Resolver
 	jobs    []Job
 	trigger []chan struct{}
-	sem     chan struct{}
+	queue   *queue
 
-	mu      sync.Mutex
-	status  []JobStatus
-	netLock map[string]*sync.Mutex
-	adhoc   map[string]*JobStatus // on-demand device detail scans, by network|key
-	adhocWG sync.WaitGroup
-	stopped bool
-	runCtx  context.Context // set while Run is active
+	mu       sync.Mutex
+	status   []JobStatus
+	netLock  map[string]*sync.Mutex
+	devices  map[string]*deviceScan // queued and running detailed scans, by deviceID
+	retries  map[string]retry       // failed or cancelled detailed scans, by deviceID
+	deviceWG sync.WaitGroup
+	stopped  bool
+	runCtx   context.Context // set while Run is active
 
 	// DefaultDetails scans devices on demand in networks without a services job.
 	DefaultDetails DetailScanner
@@ -109,11 +112,11 @@ type Scheduler struct {
 
 // New returns a scheduler. oui and res may be nil.
 func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver, jobs []Job) *Scheduler {
-	s := &Scheduler{st: st, sink: sink, oui: oui, res: res, jobs: jobs, sem: make(chan struct{}, MaxConcurrent),
-		netLock: map[string]*sync.Mutex{}, adhoc: map[string]*JobStatus{}}
+	s := &Scheduler{st: st, sink: sink, oui: oui, res: res, jobs: jobs, queue: &queue{scans: config.DefaultScans, detailed: config.DefaultDetailed},
+		netLock: map[string]*sync.Mutex{}, devices: map[string]*deviceScan{}, retries: map[string]retry{}}
 	for i, j := range jobs {
 		s.trigger = append(s.trigger, make(chan struct{}, 1))
-		s.status = append(s.status, JobStatus{ID: i, Network: j.Network.Name, Source: j.Name(),
+		s.status = append(s.status, JobStatus{ID: i, QueueID: jobID(i, j), Network: j.Network.Name, Source: j.Name(),
 			Interval: humanDuration(j.Interval), State: StateIdle})
 		if s.netLock[j.Network.Name] == nil {
 			s.netLock[j.Network.Name] = &sync.Mutex{}
@@ -121,6 +124,14 @@ func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver,
 	}
 	return s
 }
+
+// SetWorkers sets how many scans run in parallel, and how many of them may be detailed scans.
+// Call it before Run.
+func (s *Scheduler) SetWorkers(w config.Workers) {
+	s.queue.scans, s.queue.detailed = w.Scans, w.Detailed
+}
+
+func jobID(i int, j Job) string { return fmt.Sprintf("job:%d:%s:%s", i, j.Network.Name, j.Name()) }
 
 // Run starts every job (immediately, then every Interval) and blocks until ctx is done
 // and in-flight collections have finished.
@@ -133,13 +144,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 		s.mu.Lock()
 		s.stopped = true // no new device scans from here on
 		s.mu.Unlock()
-		s.adhocWG.Wait()
+		s.deviceWG.Wait()
 	}()
 	for i := range s.jobs {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			j := s.jobs[i]
+			manual := false
 			t := time.NewTicker(j.Interval)
 			defer t.Stop()
 			if wait := s.firstDelay(ctx, j); wait > 0 {
@@ -155,10 +167,12 @@ func (s *Scheduler) Run(ctx context.Context) {
 				case <-timer.C:
 				case <-s.trigger[i]:
 					timer.Stop()
+					manual = true
 				}
 			}
 			for {
-				s.runGuarded(ctx, i)
+				s.runGuarded(ctx, i, manual)
+				manual = false
 				t.Reset(j.Interval)
 				next := time.Now().UTC().Add(j.Interval)
 				s.setStatusAt(i, func(st *JobStatus) { st.NextRun = next })
@@ -167,6 +181,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 					return
 				case <-t.C:
 				case <-s.trigger[i]:
+					manual = true
 				}
 			}
 		}(i)
@@ -175,19 +190,29 @@ func (s *Scheduler) Run(ctx context.Context) {
 	wg.Wait()
 }
 
-func (s *Scheduler) runGuarded(ctx context.Context, i int) {
-	s.setStatusAt(i, func(st *JobStatus) { st.State = StateQueued })
-	if s.jobs[i].Ping == nil { // pings are light and must not hold up collections
-		select {
-		case s.sem <- struct{}{}:
-		case <-ctx.Done():
-			s.setStatusAt(i, func(st *JobStatus) { st.State = StateIdle })
+func (s *Scheduler) runGuarded(ctx context.Context, i int, manual bool) {
+	j, prio := s.jobs[i], PrioPresence
+	switch {
+	case manual:
+		prio = PrioManual
+	case j.Details != nil:
+		prio = PrioScheduled
+	}
+	// Pings are light and must not hold up collections; detailed jobs queue their devices.
+	if j.Source != nil {
+		e := s.queue.enter(jobID(i, j), false, prio)
+		s.setStatusAt(i, func(st *JobStatus) { st.State, st.Priority = StateQueued, prio.String() })
+		if err := s.queue.wait(ctx, e); err != nil {
+			s.record(ctx, model.JobRun{Network: j.Network.Name, Kind: j.kind(), Source: j.Name(), Trigger: s.queue.priority(e).trigger()}, time.Time{}, err)
+			s.setStatusAt(i, func(st *JobStatus) { st.State, st.Priority = StateIdle, "" })
 			return
 		}
-		defer func() { <-s.sem }()
+		defer s.queue.release(e)
+		prio = s.queue.priority(e)
+		s.setStatusAt(i, func(st *JobStatus) { st.Priority = prio.String() })
 	}
-	if err := s.RunOnce(ctx, s.jobs[i]); err != nil && ctx.Err() == nil {
-		slog.Warn("collection failed", "network", s.jobs[i].Network.Name, "source", s.jobs[i].Name(), "err", err)
+	if err := s.run(ctx, j, prio); err != nil && ctx.Err() == nil {
+		slog.Warn("collection failed", "network", j.Network.Name, "source", j.Name(), "err", err)
 	}
 }
 
@@ -198,10 +223,7 @@ func (s *Scheduler) ScanNow(network string) error {
 	for i, j := range s.jobs {
 		if j.Network.Name == network && j.Source != nil {
 			found = true
-			select {
-			case s.trigger[i] <- struct{}{}:
-			default: // already pending
-			}
+			s.triggerJob(i)
 		}
 	}
 	if !found {
@@ -215,27 +237,47 @@ func (s *Scheduler) ScanJob(id int) error {
 	if id < 0 || id >= len(s.jobs) {
 		return fmt.Errorf("%w: %d", ErrUnknownJob, id)
 	}
-	select {
-	case s.trigger[id] <- struct{}{}:
-	default: // already pending
-	}
+	s.triggerJob(id)
 	return nil
 }
 
-// Status returns a snapshot of every job's last run.
+// triggerJob runs job i next. A waiting job moves up instead of running twice, and a running
+// detailed job already covers the request.
+func (s *Scheduler) triggerJob(i int) {
+	s.mu.Lock()
+	busy := s.jobs[i].Details != nil && s.status[i].Running
+	s.mu.Unlock()
+	if busy || s.queue.promote(jobID(i, s.jobs[i]), PrioManual) {
+		return
+	}
+	select {
+	case s.trigger[i] <- struct{}{}:
+	default: // already pending
+	}
+}
+
+// Status returns a snapshot of every job and of the queued and running device scans.
 func (s *Scheduler) Status() []JobStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := append([]JobStatus(nil), s.status...)
-	for _, a := range s.adhoc {
-		out = append(out, *a)
+	for _, d := range s.devices {
+		out = append(out, *d.status)
 	}
+	places := s.queue.places()
 	for i := range out {
+		if p, ok := places[out[i].QueueID]; ok {
+			out[i].Position, out[i].Priority = p.pos, p.prio.String()
+		}
 		if p := out[i].Progress; p != nil {
 			v := *p
 			out[i].Progress = &v
 		}
 	}
+	devs := out[len(s.status):] // map order: sort by queue position
+	slices.SortFunc(devs, func(a, b JobStatus) int {
+		return cmp.Or(cmp.Compare(a.Position, b.Position), a.StartedAt.Compare(b.StartedAt), cmp.Compare(a.QueueID, b.QueueID))
+	})
 	return out
 }
 
@@ -266,8 +308,13 @@ func (s *Scheduler) thresholds(network string) map[string]time.Duration {
 	return out
 }
 
-// RunOnce runs one collection through the whole pipeline.
+// RunOnce runs one collection through the whole pipeline, as if scheduled.
 func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
+	return s.run(ctx, j, PrioScheduled)
+}
+
+// run runs j at once; prio is for the device scans a details job queues.
+func (s *Scheduler) run(ctx context.Context, j Job, prio Priority) error {
 	start := time.Now().UTC()
 	s.setStatus(j, func(st *JobStatus) {
 		st.Running, st.State, st.StartedAt, st.LastRun = true, StateRunning, start, start
@@ -284,9 +331,10 @@ func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
 			}
 		})
 	})
-	err := s.runOnce(ctx, j)
+	msg, err := s.runOnce(ctx, j, prio)
+	s.record(ctx, model.JobRun{Network: j.Network.Name, Kind: j.kind(), Source: j.Name(), Trigger: prio.trigger(), Message: msg}, start, err)
 	s.setStatus(j, func(st *JobStatus) {
-		st.Running, st.State = false, StateIdle
+		st.Running, st.State, st.Priority = false, StateIdle, ""
 		st.Progress, st.Task = nil, ""
 		st.LastDuration = time.Since(start).Seconds()
 		if err != nil {
@@ -299,16 +347,17 @@ func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
 	return err
 }
 
-func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
+// runOnce returns a summary of what was found.
+func (s *Scheduler) runOnce(ctx context.Context, j Job, prio Priority) (string, error) {
 	if j.Details != nil {
-		return s.runDetails(ctx, j.Network.Name, j.Details, "")
+		return s.runDetails(ctx, j, prio)
 	}
 	if j.Ping != nil {
 		return s.runPings(ctx, j.Network.Name, j.Ping)
 	}
 	obs, err := j.Source.Collect(ctx, j.Network)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if obs.At.IsZero() {
 		obs.At = time.Now().UTC()
@@ -327,44 +376,51 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
 	name := j.Network.Name
 	known, err := s.st.Devices(ctx, name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	last, err := s.st.LastSuccesses(ctx, name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	_, seenBefore := last[obs.Source]
 	changed, events := diff.Apply(known, obs, !seenBefore)
 	if err := s.st.UpsertDevices(ctx, changed); err != nil {
-		return err
+		return "", err
 	}
 	if err := s.st.ReplaceLinks(ctx, name, obs.Source, obs.Links); err != nil {
-		return err
+		return "", err
 	}
 	if err := s.st.SetLastSuccess(ctx, name, obs.Source, obs.At); err != nil {
-		return err
+		return "", err
 	}
 	last[obs.Source] = obs.At
 
 	known, err = s.st.Devices(ctx, name)
 	if err != nil {
-		return err
+		return "", err
 	}
 	off, offEvents := diff.Offline(known, name, last, s.thresholds(name))
 	if err := s.st.UpsertDevices(ctx, off); err != nil {
-		return err
+		return "", err
 	}
 	events = append(events, offEvents...)
 	if err := s.recordNmapRTTs(ctx, obs); err != nil {
 		slog.Warn("storing ping times failed", "network", name, "err", err)
 	}
 	if err := s.st.AddEvents(ctx, events); err != nil {
-		return err
+		return "", err
 	}
 	if len(events) > 0 && s.sink != nil {
 		s.sink.Enqueue(events)
 	}
-	return nil
+	if err := s.queueUnscanned(j); err != nil && ctx.Err() == nil {
+		slog.Warn("queueing detailed scans failed", "network", name, "err", err)
+	}
+	msg := count(len(obs.Hosts), "host") + " seen"
+	if len(events) > 0 {
+		msg += ", " + count(len(events), "change")
+	}
+	return msg, nil
 }
 
 func humanDuration(d time.Duration) string { return config.FormatDuration(d) }

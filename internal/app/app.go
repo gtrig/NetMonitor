@@ -77,20 +77,23 @@ func New(ctx context.Context, path string, opts Options) (*App, error) {
 		return nil, err
 	}
 	a.raw, a.rt = raw, rt
-	go a.prunePings(ctx)
+	go a.prune(ctx)
 	return a, nil
 }
 
-// pingRetention is how long ping history is kept.
-const pingRetention = 30 * 24 * time.Hour
+// retention is how long ping and job history is kept.
+const retention = 30 * 24 * time.Hour
 
-// prunePings drops old ping history now and then daily.
-func (a *App) prunePings(ctx context.Context) {
+// prune drops old ping and job history now and then daily.
+func (a *App) prune(ctx context.Context) {
 	t := time.NewTicker(24 * time.Hour)
 	defer t.Stop()
 	for {
-		if err := a.opts.Store.PrunePings(ctx, time.Now().Add(-pingRetention)); err != nil && ctx.Err() == nil {
+		if err := a.opts.Store.PrunePings(ctx, time.Now().Add(-retention)); err != nil && ctx.Err() == nil {
 			slog.Warn("pruning ping history failed", "err", err)
+		}
+		if err := a.opts.Store.PruneJobRuns(ctx, time.Now().Add(-retention)); err != nil && ctx.Err() == nil {
+			slog.Warn("pruning job history failed", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -199,6 +202,7 @@ func (a *App) start(eff *config.Config) (*Runtime, error) {
 	jobs, gateways := a.opts.Build(eff)
 	sched := scheduler.New(st, d, a.opts.OUI, a.opts.Resolver, jobs)
 	sched.DefaultDetails = nmap.NewServices(nil, nil)
+	sched.SetWorkers(eff.Workers)
 	rt := &Runtime{Config: eff, Scheduler: sched, Dispatcher: d, Gateways: gateways, cancel: cancel, done: make(chan struct{})}
 	go func() { sched.Run(ctx); close(rt.done) }()
 	return rt, nil

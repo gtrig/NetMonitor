@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1>Overview</h1>
+<div class="flex items-baseline gap-4"><h1>Overview</h1>{{if or .Running .Waiting}}<a href="/jobs">{{.Running}} running, {{.Waiting}} waiting in the scan queue →</a>{{end}}</div>
 <section class="mt-4 mb-7 grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-4">
 {{range .Networks}}
   <article class="card">
@@ -19,21 +19,11 @@
         {{if .LastErr}}<div class="ml-4.5 text-xs wrap-break-word text-bad">{{.LastErr}}</div>{{end}}</li>
     {{end}}
     </ul>
-    <div class="flex gap-4"><a href="/map?network={{.Name}}">Map →</a><a href="/devices?network={{.Name}}">Devices →</a></div>
+    <div class="flex gap-4"><a href="/map?network={{.Name}}">Map →</a><a href="/devices?network={{.Name}}">Devices →</a><a href="/jobs?network={{.Name}}">Jobs →</a></div>
   </article>
 {{else}}
   <p class="text-muted">No networks configured.</p>
 {{end}}
-</section>
-
-<section class="my-6">
-  <h2>Scan jobs</h2>
-  <div class="table-wrap">
-  <table id="jobs" class="data-table">
-    <thead><tr><th>Network</th><th>Source</th><th>State</th><th>Progress</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
-    <tbody><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
-  </table>
-  </div>
 </section>
 
 <section class="grid grid-cols-1 gap-6 min-[801px]:grid-cols-[2fr_1fr]">
@@ -60,4 +50,3 @@
   </div>
 </section>
 {{end}}
-{{define "scripts"}}<script src="/static/jobs.js"></script>{{end}}

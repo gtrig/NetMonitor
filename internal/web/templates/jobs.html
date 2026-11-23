@@ -1,0 +1,64 @@
+{{define "content"}}
+<h1>Jobs</h1>
+<section class="my-6">
+  <h2>Scan queue <span class="font-normal text-muted" id="queue-count"></span></h2>
+  <div class="table-wrap max-h-80 overflow-y-auto">
+  <table id="queue" class="data-table">
+    <thead><tr><th>#</th><th>Network</th><th>Scan</th><th>Why</th><th>Progress</th><th></th></tr></thead>
+    <tbody><tr><td colspan="6" class="text-muted">Loading…</td></tr></tbody>
+  </table>
+  </div>
+</section>
+
+<section class="my-6">
+  <h2>Scan jobs</h2>
+  <div class="table-wrap">
+  <table id="jobs" class="data-table">
+    <thead><tr><th>Network</th><th>Source</th><th>State</th><th>Progress</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
+    <tbody><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
+  </table>
+  </div>
+</section>
+
+<section class="my-6">
+  <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <h2 class="mb-0">History</h2>
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <select class="control" name="network" aria-label="Network" onchange="this.form.submit()">
+        <option value="">All networks</option>
+        {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+      <select class="control" name="kind" aria-label="Kind" onchange="this.form.submit()">
+        <option value="">All kinds</option>
+        {{range .Jobs.Kinds}}<option value="{{.Value}}" {{if eq $.Jobs.Filter.Kind .Value}}selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      <select class="control" name="outcome" aria-label="Outcome" onchange="this.form.submit()">
+        <option value="">All outcomes</option>
+        {{range .Jobs.Outcomes}}<option value="{{.Value}}" {{if eq $.Jobs.Filter.Outcome .Value}}selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+      {{if .Jobs.Filtered}}<a href="/jobs">Clear filters</a>{{end}}
+    </form>
+  </div>
+  <div id="history" {{if .Jobs.Newest}}data-older{{end}}>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Outcome</th><th>Finished</th><th>Network</th><th>Job</th><th>Started by</th><th>Took</th><th>Result</th></tr></thead>
+    <tbody>
+    {{range .Jobs.Runs}}
+      <tr><td><span class="state" data-outcome="{{.Outcome}}">{{.OutcomeLabel}}</span></td>
+        <td class="tabular-nums" title="{{ago .At}}">{{ts .At}}</td><td>{{.Network}}</td>
+        <td>{{if .Link}}<a class="mono" href="{{.Link}}">{{.Source}}</a>{{if .Name}} {{.Name}}{{end}}{{else}}<span class="mono">{{.Source}}</span>{{end}}<div class="text-xs text-muted">{{.KindLabel}}</div></td>
+        <td>{{.Trigger}}</td><td class="tabular-nums">{{dur .Duration}}</td>
+        <td class="min-w-60 whitespace-normal! wrap-anywhere {{if eq .Outcome "failed"}}text-bad{{end}}">{{.Message}}</td></tr>
+    {{else}}
+      <tr><td colspan="7" class="text-muted">{{if .Jobs.Filtered}}No finished jobs match these filters.{{else}}No finished jobs yet.{{end}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  <p class="mt-2 flex gap-2">{{if .Jobs.Newest}}<a class="btn" href="{{.Jobs.Newest}}">← Newest</a>{{end}}{{if .Jobs.Older}}<a class="btn" href="{{.Jobs.Older}}">Older →</a>{{end}}</p>
+  </div>
+  <p class="text-xs text-muted">Finished jobs are kept for 30 days.</p>
+</section>
+{{end}}
+{{define "scripts"}}<script src="/static/jobs.js"></script>{{end}}

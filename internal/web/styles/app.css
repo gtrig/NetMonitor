@@ -92,6 +92,9 @@
   .state { @apply rounded-[10px] border px-2 py-px text-xs text-muted; }
   .state[data-state="running"] { @apply border-accent text-accent; }
   .state[data-state="queued"] { @apply border-warn text-warn; }
+  .state[data-outcome="ok"] { @apply border-ok text-ok; }
+  .state[data-outcome="failed"] { @apply border-bad text-bad; }
+  .state[data-outcome="interrupted"] { @apply border-warn text-warn; }
 
   .field { @apply grid gap-[3px] text-xs text-muted; }
   .field > input:not([type="checkbox"]), .field > select { @apply w-full rounded-md border bg-page px-2 py-[5px] text-sm text-fg disabled:opacity-75; }

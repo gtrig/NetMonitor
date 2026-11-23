@@ -25,6 +25,10 @@ const (
 	DefaultInterval = 5 * time.Minute
 	// DefaultServicesInterval is the default interval of detailed (services) scans.
 	DefaultServicesInterval = 6 * time.Hour
+	// DefaultScans and DefaultDetailed are the default worker counts; MaxScans is the upper limit.
+	DefaultScans    = 4
+	DefaultDetailed = 2
+	MaxScans        = 64
 )
 
 type Config struct {
@@ -32,6 +36,7 @@ type Config struct {
 	DataDir     string       `yaml:"data_dir,omitempty" json:"data_dir,omitempty"`
 	OUIPath     string       `yaml:"oui_path,omitempty" json:"oui_path,omitempty"`
 	Auth        *BasicAuth   `yaml:"auth,omitempty" json:"auth,omitempty"`
+	Workers     Workers      `yaml:"workers,omitempty" json:"workers,omitempty"`
 	Routers     []Router     `yaml:"routers,omitempty" json:"routers,omitempty"`
 	SNMPTargets []SNMPTarget `yaml:"snmp_targets,omitempty" json:"snmp_targets,omitempty"`
 	Networks    []Network    `yaml:"networks,omitempty" json:"networks,omitempty"`
@@ -42,6 +47,13 @@ type Config struct {
 type BasicAuth struct {
 	Username string `yaml:"username,omitempty" json:"username,omitempty"`
 	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+}
+
+// Workers is how many scans run in parallel. Zero means the default.
+type Workers struct {
+	Scans int `yaml:"scans,omitempty" json:"scans,omitempty"`
+	// Detailed is how many of them may be detailed scans; always fewer than Scans.
+	Detailed int `yaml:"detailed,omitempty" json:"detailed,omitempty"`
 }
 
 type Router struct {
@@ -79,7 +91,12 @@ type Network struct {
 	Sources      []SourceRef  `yaml:"sources,omitempty" json:"sources,omitempty"`
 	Exclude      []netip.Addr `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	OfflineAfter Duration     `yaml:"offline_after,omitempty" json:"offline_after,omitempty"`
+	// AutoDetails scans new devices in detail once they are seen; nil means on.
+	AutoDetails *bool `yaml:"auto_details,omitempty" json:"auto_details,omitempty"`
 }
+
+// AutoDetailsOn reports whether devices without a detailed scan get one automatically.
+func (n Network) AutoDetailsOn() bool { return n.AutoDetails == nil || *n.AutoDetails }
 
 type SourceRef struct {
 	Type     string   `yaml:"type,omitempty" json:"type,omitempty"`
@@ -227,6 +244,12 @@ func (c *Config) applyDefaults() {
 	if c.OUIPath == "" {
 		c.OUIPath = DefaultOUIPath
 	}
+	if c.Workers.Scans == 0 {
+		c.Workers.Scans = DefaultScans
+	}
+	if c.Workers.Detailed == 0 {
+		c.Workers.Detailed = min(DefaultDetailed, max(1, c.Workers.Scans-1))
+	}
 	for i := range c.SNMPTargets {
 		if c.SNMPTargets[i].Port == 0 {
 			c.SNMPTargets[i].Port = 161
@@ -265,6 +288,11 @@ func (c *Config) Validate() error {
 	var errs []error
 	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
 
+	if w := c.Workers; w.Scans < 2 || w.Scans > MaxScans {
+		bad("workers: parallel scans must be between 2 and %d", MaxScans)
+	} else if w.Detailed < 1 || w.Detailed >= w.Scans {
+		bad("workers: parallel detailed scans must be at least 1 and lower than parallel scans (%d), so one worker stays free for presence scans", w.Scans)
+	}
 	routers := map[string]bool{}
 	for _, r := range c.Routers {
 		if r.Name == "" || routers[r.Name] {

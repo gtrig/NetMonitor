@@ -84,7 +84,7 @@ func TestJobStateAndProgress(t *testing.T) {
 func TestQueuedWhileSemaphoreFull(t *testing.T) {
 	var jobs []Job
 	var srcs []*blockingSource
-	for i := 0; i <= MaxConcurrent; i++ {
+	for i := 0; i <= config.DefaultScans; i++ {
 		src := newBlocking(string(rune('a' + i)))
 		srcs = append(srcs, src)
 		jobs = append(jobs, Job{Network: lan, Source: src, Interval: time.Hour, OfflineAfter: time.Hour})
@@ -100,7 +100,7 @@ func TestQueuedWhileSemaphoreFull(t *testing.T) {
 				queued++
 			}
 		}
-		return running == MaxConcurrent && queued == 1
+		return running == config.DefaultScans && queued == 1
 	})
 	for _, src := range srcs {
 		close(src.release)

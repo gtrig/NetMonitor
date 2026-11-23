@@ -97,8 +97,8 @@ if (table) {
       if (e.target.classList.contains("scan-details")) {
         await api("POST", "/api/details/scan", ref);
         e.target.disabled = true;
-        e.target.textContent = "Scanning…";
-        toast("Detailed scan started; see the Overview page for progress. Reload when it is done.");
+        e.target.textContent = "Queued…";
+        toast("Detailed scan queued; see the Jobs page for progress. Reload when it is done.");
       } else if (e.target.classList.contains("split")) {
         await api("POST", "/api/machines/split", ref);
         location.reload();
@@ -142,14 +142,14 @@ if (devicePage) {
         const before = await scannedAt();
         await api("POST", "/api/details/scan", ref);
         b.disabled = true;
-        b.textContent = "Scanning…";
-        toast("Detailed scan started; this page reloads when it is done");
+        b.textContent = "Queued…";
+        toast("Detailed scan queued; this page reloads when it is done");
         const until = Date.now() + 15 * 60000;
         const poll = setInterval(async () => {
           try {
             if (await scannedAt() !== before) { clearInterval(poll); location.reload(); return; }
           } catch { /* try again */ }
-          if (Date.now() > until) { clearInterval(poll); b.disabled = false; b.textContent = "Scan again"; toast("No result yet; check the Overview page"); }
+          if (Date.now() > until) { clearInterval(poll); b.disabled = false; b.textContent = "Scan again"; toast("No result yet; check the Jobs page"); }
         }, 4000);
       } else if (b.classList.contains("split-off")) {
         await api("POST", "/api/machines/split", ref);

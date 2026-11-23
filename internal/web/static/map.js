@@ -539,8 +539,8 @@
       if (!b) return;
       try {
         await api("POST", "/api/details/scan", { network: b.dataset.scanNet, key: b.dataset.scanKey });
-        b.disabled = true; b.textContent = "Scanning…";
-        toast("Detailed scan started; progress is on the Overview page");
+        b.disabled = true; b.textContent = "Queued…";
+        toast("Detailed scan queued; progress is on the Jobs page");
       } catch (err) { toast("Scan failed: " + err.message); }
     });
   }

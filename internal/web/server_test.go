@@ -34,6 +34,12 @@ func (f *fakeSched) ScanJob(id int) error {
 	f.scanned = append(f.scanned, "job0")
 	return nil
 }
+func (f *fakeSched) Cancel(id string) error {
+	if id != "device:lan|x" {
+		return scheduler.ErrNotQueued
+	}
+	return nil
+}
 func (f *fakeSched) ScanDevice(network, key string) error {
 	if key != "mac:aa:00:00:00:00:01" {
 		return scheduler.ErrUnknownDevice
@@ -211,6 +217,15 @@ func TestJobsAPI(t *testing.T) {
 	for _, id := range []string{"9", "x"} {
 		if rr := do(h, "POST", "/api/jobs/"+id+"/scan", "", true); rr.Code != 404 {
 			t.Fatalf("job %s: %d", id, rr.Code)
+		}
+	}
+}
+
+func TestCancelAPI(t *testing.T) {
+	h, _, _ := newTest(t, creds)
+	for body, want := range map[string]int{`{"id":"device:lan|x"}`: 204, `{"id":"gone"}`: 409, `{`: 400} {
+		if rr := do(h, "POST", "/api/queue/cancel", body, true); rr.Code != want {
+			t.Errorf("%s: %d", body, rr.Code)
 		}
 	}
 }

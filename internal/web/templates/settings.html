@@ -9,7 +9,7 @@
   <button class="tab" type="button" role="tab" id="tab-networks" data-tab="networks" aria-controls="panel-networks" aria-selected="true">Networks<span class="tab-count" hidden></span><span class="tab-dot" hidden><span class="sr-only">unsaved changes</span></span></button>
   <button class="tab" type="button" role="tab" id="tab-sources" data-tab="sources" aria-controls="panel-sources" aria-selected="false" tabindex="-1">Data sources<span class="tab-count" hidden></span><span class="tab-dot" hidden><span class="sr-only">unsaved changes</span></span></button>
   <button class="tab" type="button" role="tab" id="tab-notifications" data-tab="notifications" aria-controls="panel-notifications" aria-selected="false" tabindex="-1">Notifications<span class="tab-count" hidden></span><span class="tab-dot" hidden><span class="sr-only">unsaved changes</span></span></button>
-  <button class="tab" type="button" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system" aria-selected="false" tabindex="-1">System<span class="tab-count tab-count-warn" hidden></span></button>
+  <button class="tab" type="button" role="tab" id="tab-system" data-tab="system" aria-controls="panel-system" aria-selected="false" tabindex="-1">System<span class="tab-count tab-count-warn" hidden></span><span class="tab-dot" hidden><span class="sr-only">unsaved changes</span></span></button>
 </div>
 <div id="settings">
   <p class="text-muted" id="loading">Loading…</p>
@@ -25,6 +25,7 @@
     <section class="mb-8" data-section="rules"></section>
   </div>
   <div role="tabpanel" id="panel-system" aria-labelledby="tab-system" hidden>
+    <section class="mb-8" data-section="workers"></section>
     <section class="mb-8">
       <h2>Configuration file</h2>
       <div class="card flex flex-wrap items-center gap-x-6 gap-y-3">
