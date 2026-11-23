@@ -38,7 +38,8 @@ Everything else below is a proposal.
 ### Map data
 - `/api/graph` device nodes gain, per network: `rttMs` (absent when unknown), `rttAt`, and the origin (router name or `netmon`).
 
-### Layouts (dropdown: Radar, Port sectors, Distance lanes; default Radar)
+### Layouts (dropdown: Radar, Port sectors, Distance lanes, Classic; default Classic)
+- Classic is the original map (added by the user afterwards, and the default): no distances, so the scale options are disabled.
 - One group per network, centred on its router; VPN is centred on a "netmon" marker, as its times are from netmon.
 - Distance is logarithmic, 0.1–300 ms, clamped at both ends.
 - Offline devices, and online ones without a ping time, sit on the dashed outer ring (end strip in lanes). Online ones keep their online color.
