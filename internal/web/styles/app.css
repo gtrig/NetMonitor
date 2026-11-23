@@ -3,7 +3,7 @@
    below are only the primitives shared by Go templates and JS-rendered markup. */
 @import "tailwindcss" source(none);
 @source "../templates/*.html";
-@source "../static/{app,jobs,map,map-layout,map-options,ping-chart,settings}.js";
+@source "../static/{app,devices,devices-table,jobs,map,map-layout,map-options,ping-chart,settings}.js";
 
 /* Semantic colors; map.js reads the same variables for the graph. */
 :root {
@@ -66,9 +66,25 @@
   .mono { @apply font-mono text-[13px]; }
 
   .table-wrap { @apply overflow-x-auto rounded-[10px] border bg-surface; }
-  .data-table { @apply w-full; }
+  /* Separate borders: collapsed ones do not follow a sticky header. */
+  .data-table { @apply w-full border-separate border-spacing-0; }
   .data-table > * > tr > * { @apply border-b px-2.5 py-[7px] text-left whitespace-nowrap; }
-  .data-table > thead > tr > th { @apply sticky top-0 bg-page text-xs font-semibold text-muted; }
+  .data-table > tbody > tr:last-child > * { @apply border-b-0; }
+  .data-table > thead > tr > th { @apply sticky top-0 z-1 bg-page text-xs font-semibold text-muted; }
+  .data-table > tbody > tr[data-selected] > td { @apply bg-[color-mix(in_srgb,var(--accent)_12%,var(--surface))]; }
+  #devices > * > tr > * { @apply px-2; }
+  body:has(.bulk-bar:not([hidden])) #toast { @apply bottom-24; }
+  .sort { @apply inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-fg focus-visible:outline-2 focus-visible:outline-accent; }
+  .sort::after { content: "↕"; opacity: .35; }
+  [aria-sort="ascending"] > .sort, [aria-sort="descending"] > .sort { @apply text-fg; }
+  [aria-sort="ascending"] > .sort::after { content: "↑"; opacity: 1; }
+  [aria-sort="descending"] > .sort::after { content: "↓"; opacity: 1; }
+  .menu { @apply relative; }
+  .menu > summary { @apply list-none; }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > div { @apply absolute top-full left-0 z-4 mt-1 grid max-h-[60dvh] min-w-40 overflow-y-auto rounded-lg border bg-surface p-1.5 shadow-lg; }
+  .menu-item { @apply flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-page; }
+  .bulk-bar { @apply sticky bottom-4 z-2 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-accent bg-surface px-4 py-2.5 shadow-lg; }
   .mini-table { @apply my-1 w-full text-xs; }
   .mini-table > tbody > tr > td { @apply border-b py-px pr-1.5; }
 

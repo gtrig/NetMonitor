@@ -18,7 +18,7 @@
     <a class="rounded-md px-2.5 py-1.5 text-muted aria-[current]:bg-page aria-[current]:text-fg" href="/settings" {{if eq .Active "settings"}}aria-current="page"{{end}}>Settings</a>
   </nav>
 </header>
-<main class="{{if eq .Active "map"}}p-4 pb-0 sm:p-6 sm:pb-0{{else}}mx-auto max-w-[1400px] p-4 sm:p-6{{end}}">
+<main class="{{if eq .Active "map"}}p-4 pb-0 sm:p-6 sm:pb-0{{else if eq .Active "devices"}}mx-auto max-w-[1800px] p-4 sm:flex sm:h-[calc(100dvh-54px)] sm:min-h-[480px] sm:flex-col sm:p-6{{else}}mx-auto max-w-[1400px] p-4 sm:p-6{{end}}">
 {{template "content" .}}
 </main>
 <div id="toast" class="pointer-events-none fixed bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-lg bg-fg px-3.5 py-2 text-page opacity-0 transition-opacity duration-200 data-show:opacity-100" role="status" aria-live="polite"></div>
