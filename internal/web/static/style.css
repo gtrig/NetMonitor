@@ -94,6 +94,11 @@ input.label:hover, input.label:focus { border-color: var(--border); background: 
 #panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 10px 0; font-size: 13px; }
 #panel dt { color: var(--muted); } #panel dd { margin: 0; word-break: break-all; }
 #panel .close { float: right; }
+#panel { max-height: calc(100% - 24px); overflow-y: auto; box-sizing: border-box; }
+#panel .actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+#panel .open-links { display: contents; }
+#panel tr.member-acts td { padding-top: 0; border-top: 0; }
+#panel tr.member-acts .btn { margin-right: 4px; }
 #panel form { display: grid; gap: 8px; }
 
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);

@@ -461,7 +461,7 @@ func (s *server) page(name, title string) http.HandlerFunc {
 			serverError(w, err)
 			return
 		}
-		s.render(w, name, pageData{Title: title, Networks: nets, Network: r.URL.Query().Get("network")})
+		s.render(w, name, pageData{Title: title, Networks: nets, Network: r.URL.Query().Get("network"), CanEdit: s.canEdit()})
 	}
 }
 

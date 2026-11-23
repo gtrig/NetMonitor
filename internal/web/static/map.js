@@ -150,22 +150,83 @@
   const ago = (t) => { if (!t || t.startsWith("0001")) return "never"; const d = (Date.now() - new Date(t)) / 1000;
     return d < 60 ? Math.round(d) + "s ago" : d < 3600 ? Math.round(d / 60) + "m ago" : d < 172800 ? Math.round(d / 3600) + "h ago" : new Date(t).toLocaleDateString(); };
 
+  const canEdit = panel.dataset.canEdit === "true";
+  let current = null; // node shown in the panel
+  const ext = (href, text) => `<a class="btn small" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(text)} ↗</a>`;
+  const hostOf = (ip) => (ip.includes(":") ? `[${ip}]` : ip);
+  const ipsOf = (d) => (d.members && d.members.length ? d.members.map((m) => m.ip) : String(d.ip || "").split(", ")).filter(Boolean);
+
+  // webLinks returns the web interfaces a detailed scan found ({ip, ports}), or http://<ip> for each
+  // address when none were found.
+  function webLinks(scanned, ips) {
+    const out = [];
+    for (const { ip, ports } of scanned) {
+      for (const p of ports || []) {
+        const svc = (p.service || "").toLowerCase();
+        const tls = /https|ssl|tls/.test(svc) || [443, 8443, 9443].includes(p.port);
+        if (p.proto !== "tcp" || !(/http/.test(svc) || [80, 443, 8080, 8443].includes(p.port))) continue;
+        out.push(`${tls ? "https" : "http"}://${hostOf(ip)}${p.port === (tls ? 443 : 80) ? "" : ":" + p.port}/`);
+      }
+    }
+    if (!out.length) ips.forEach((ip) => out.push(`http://${hostOf(ip)}/`));
+    return [...new Set(out)];
+  }
+  const openLinks = (links) => links.map((u) => ext(u, "Open " + u.replace(/\/$/, ""))).join("");
+
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return; } catch { /* plain http: no clipboard API */ }
+    const t = document.createElement("textarea");
+    t.value = text; document.body.append(t); t.select(); document.execCommand("copy"); t.remove();
+  }
+
+  // One listener for every panel action button.
+  panel.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b || !current) return;
+    const ref = { network: b.dataset.network, key: b.dataset.key };
+    try {
+      if (b.dataset.act === "copy") {
+        await copyText(b.dataset.ip); toast("Copied " + b.dataset.ip);
+      } else if (b.dataset.act === "forget") {
+        if (!confirm(`Forget ${ref.key} in ${ref.network}? It comes back if a scan sees it again.`)) return;
+        await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));
+        toast("Device forgotten"); panel.hidden = true; await load();
+      } else if (b.dataset.act === "split") {
+        await api("POST", "/api/machines/split", ref);
+        toast("Split off from the machine"); panel.hidden = true; await load();
+      }
+    } catch (err) { toast("Failed: " + err.message); }
+  });
+
   function show(n) {
+    current = n;
     const d = n.data();
     if (d.kind === "net") {
       const kids = n.children();
       const on = kids.filter((c) => c.data("status") === "online").length;
       panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2>
         <p class="muted">${kids.length} nodes · ${on} online</p>
-        <p><a href="/map?network=${encodeURIComponent(d.network)}">Only this network →</a></p>`;
+        <div class="actions"><button class="btn small" type="button" data-scan="${esc(d.network)}">Scan now</button>
+        <a class="btn small" href="/map?network=${encodeURIComponent(d.network)}">Only this network</a>
+        ${ext("/map?network=" + encodeURIComponent(d.network), "New tab")}</div>`;
     } else if (d.kind !== "device") {
-      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2><p class="muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>`;
+      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2><p class="muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>` +
+        (d.ip ? `<div class="actions">${openLinks([`http://${hostOf(d.ip)}/`])}
+          <button class="btn small" type="button" data-act="copy" data-ip="${esc(d.ip)}">Copy IP</button></div>` : "");
     } else {
       const members = d.members || [];
+      const ref = (m) => `data-network="${esc(m.network)}" data-key="${esc(m.key)}"`;
       const memberList = members.length > 1 ? `<h3 class="sub">Addresses</h3><table class="members"><tbody>${members.map((m) =>
-        `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono small">${esc(m.mac)}</td><td><span class="pill ${m.online ? "ok" : "idle"}"></span></td></tr>`).join("")}</tbody></table>` : "";
+        `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono small">${esc(m.mac)}</td><td><span class="pill ${m.online ? "ok" : "idle"}"></span></td></tr>
+        ${canEdit ? `<tr class="member-acts"><td colspan="4">${d.machine ? `<button class="btn small" type="button" data-act="split" ${ref(m)} title="Remove this address from the machine">Split</button>` : ""}
+          <button class="btn small danger" type="button" data-act="forget" ${ref(m)} title="Remove this address; it comes back if seen again">Forget</button></td></tr>` : ""}`).join("")}</tbody></table>` : "";
+      const ip = ipsOf(d)[0] || "";
+      const actions = `<h3 class="sub">Actions</h3><div class="actions"><span class="open-links">${openLinks(webLinks([], ipsOf(d)))}</span>
+        ${ip ? `<button class="btn small" type="button" data-act="copy" data-ip="${esc(ip)}">Copy IP</button>
+        ${ext("/devices?q=" + encodeURIComponent(ip), "View in Devices")}` : ""}
+        ${canEdit && members.length <= 1 ? `<button class="btn small danger" type="button" data-act="forget" ${ref(members[0] || { network: d.network, key: d.key })}>Forget</button>` : ""}</div>`;
       panel.innerHTML = `<button class="btn small close">×</button>
-        <h2>${esc(d.label)}</h2>
+        <h2>${esc(d.label)}</h2>${actions}
         <dl><dt>Status</dt><dd>${esc(d.status)}</dd><dt>IP</dt><dd class="mono">${esc(d.ip)}</dd>
         <dt>MAC</dt><dd class="mono">${esc(d.mac)}</dd><dt>Vendor</dt><dd>${esc(d.vendor)}</dd>
         <dt>Hostname</dt><dd>${esc(d.hostname)}</dd><dt>Port</dt><dd class="mono">${esc(d.port)}</dd>
@@ -202,6 +263,9 @@
     try { all = await api("GET", "/api/details"); } catch { /* shown as none */ }
     if (!box.isConnected) return;
     const byRef = new Map(all.map((x) => [x.network + "|" + x.key, x]));
+    const scanned = members.filter((m) => byRef.has(m.network + "|" + m.key)).map((m) => ({ ip: m.ip, ports: byRef.get(m.network + "|" + m.key).ports }));
+    const links = panel.querySelector(".open-links");
+    if (links) links.innerHTML = openLinks(webLinks(scanned, members.map((m) => m.ip).filter(Boolean)));
     box.innerHTML = `<h3 class="sub">Services</h3>` + members.map((m) => {
       const x = byRef.get(m.network + "|" + m.key);
       const head = members.length > 1 ? `<div class="small mono">${esc(m.ip)} <span class="muted">${esc(m.network)}</span></div>` : "";

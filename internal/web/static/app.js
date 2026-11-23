@@ -103,4 +103,6 @@ if (table) {
   });
   q.addEventListener("input", apply);
   only.addEventListener("change", apply);
+  const initial = new URLSearchParams(location.search).get("q");
+  if (initial) { q.value = initial; apply(); }
 }

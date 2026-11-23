@@ -12,7 +12,7 @@
 </div>
 <div class="map-wrap">
   <div id="cy" aria-label="Network topology graph"></div>
-  <aside id="panel" hidden></aside>
+  <aside id="panel" data-can-edit="{{.CanEdit}}" hidden></aside>
 </div>
 {{end}}
 {{define "scripts"}}<script src="/static/cytoscape.min.js"></script><script src="/static/map.js"></script>{{end}}
