@@ -97,6 +97,9 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 			if err := moveDetails(ctx, tx, d.Network, d.Key, d.MergedInto); err != nil {
 				return err
 			}
+			if err := movePings(ctx, tx, d.Network, d.Key, d.MergedInto); err != nil {
+				return err
+			}
 			continue
 		}
 		if d.PrevKey != "" && d.PrevKey != d.Key {
@@ -112,6 +115,9 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 				return err
 			}
 			if err := moveDetails(ctx, tx, d.Network, d.PrevKey, d.Key); err != nil {
+				return err
+			}
+			if err := movePings(ctx, tx, d.Network, d.PrevKey, d.Key); err != nil {
 				return err
 			}
 		}

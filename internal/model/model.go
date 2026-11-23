@@ -133,3 +133,18 @@ type DeviceDetails struct {
 	OSAccuracy int       `json:"osAccuracy,omitempty"`
 	Ports      []Port    `json:"ports"`
 }
+
+// Ping is the smoothed round-trip time of one device row.
+type Ping struct {
+	Network, Key string
+	Origin       string // what measured it: a router name, or "netmon"
+	RTT          time.Duration
+	OK           bool      // false: no recent answer
+	At           time.Time // last answer
+}
+
+// PingSample is one device's result in a ping run; a negative RTT means no answer.
+type PingSample struct {
+	Key string
+	RTT time.Duration
+}

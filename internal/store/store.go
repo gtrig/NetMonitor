@@ -74,6 +74,14 @@ var migrations = []string{
 		ports TEXT NOT NULL DEFAULT '[]',
 		PRIMARY KEY (network, key)
 	);`,
+	`CREATE TABLE device_pings (
+		network TEXT NOT NULL,
+		key TEXT NOT NULL,
+		origin TEXT NOT NULL,
+		samples TEXT NOT NULL DEFAULT '[]',
+		answered_at INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (network, key)
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.
