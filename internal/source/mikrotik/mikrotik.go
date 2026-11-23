@@ -134,6 +134,11 @@ func (a *apiRunner) connect(ctx context.Context) (*routeros.Client, error) {
 }
 
 func (a *apiRunner) Print(ctx context.Context, path string) ([]map[string]string, error) {
+	return a.Run(ctx, path)
+}
+
+// Run runs a command with API arguments ("=name=value") and returns its rows.
+func (a *apiRunner) Run(ctx context.Context, path string, args ...string) ([]map[string]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c, err := a.connect(ctx)
@@ -143,7 +148,7 @@ func (a *apiRunner) Print(ctx context.Context, path string) ([]map[string]string
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { c.Close() })
-	reply, err := c.Run(path)
+	reply, err := c.Run(append([]string{path}, args...)...)
 	if !stop() || err != nil {
 		c.Close()
 		a.client = nil
