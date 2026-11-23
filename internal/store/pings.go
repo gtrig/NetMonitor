@@ -16,7 +16,7 @@ const (
 	pingMaxMisses = 3 // this many misses in a row: no current value
 )
 
-// RecordPings adds one ping run to the stored times of network. A change of origin starts over,
+// RecordPings adds one ping run to the history and the smoothed times of network. A change of origin starts over,
 // since times from different origins don't compare. Devices that are no longer stored are skipped.
 func (s *Store) RecordPings(ctx context.Context, network, origin string, at time.Time, samples []model.PingSample) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
@@ -44,6 +44,10 @@ func (s *Store) RecordPings(ctx context.Context, network, origin string, at time
 			v := int64(-1)
 			if sm.RTT >= 0 {
 				v, answered = sm.RTT.Microseconds(), at.Unix()
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO ping_history (network, key, at, origin, rtt_us) VALUES (?, ?, ?, ?, ?)`,
+				network, sm.Key, at.Unix(), origin, v); err != nil {
+				return err
 			}
 			us = append(us, v)
 			if len(us) > pingWindow {
@@ -115,13 +119,14 @@ func smooth(us []int64) (time.Duration, bool) {
 	return time.Duration((answered[(n-1)/2]+answered[n/2])/2) * time.Microsecond, true
 }
 
-// movePings hands the times of (network, from) to (network, to) unless to was answered later.
+// movePings hands the history of (network, from) to (network, to), and its smoothed times unless to was answered later.
 func movePings(ctx context.Context, tx *sql.Tx, network, from, to string) error {
 	for _, q := range []string{
 		`DELETE FROM device_pings WHERE network = ?1 AND key = ?3
 			AND answered_at < (SELECT answered_at FROM device_pings WHERE network = ?1 AND key = ?2)`,
 		`UPDATE OR IGNORE device_pings SET key = ?3 WHERE network = ?1 AND key = ?2`,
 		`DELETE FROM device_pings WHERE network = ?1 AND key = ?2 AND ?3 <> ?2`,
+		`UPDATE ping_history SET key = ?3 WHERE network = ?1 AND key = ?2`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, network, from, to); err != nil {
 			return err

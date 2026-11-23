@@ -118,6 +118,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/data/networks/{name}", s.apiDeleteNetworkData)
 	mux.HandleFunc("POST /api/scan/{network}", s.apiScan)
 	mux.HandleFunc("GET /api/jobs", s.apiJobs)
+	mux.HandleFunc("GET /api/pings", s.apiPings)
+	mux.HandleFunc("GET /api/pings/list", s.apiPingList)
 	mux.HandleFunc("GET /api/details", s.apiDetails)
 	mux.HandleFunc("POST /api/details/scan", s.apiScanDetails)
 	mux.HandleFunc("POST /api/jobs/{id}/scan", s.apiScanJob)

@@ -10,6 +10,7 @@ import (
 	"net"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/enrich"
@@ -76,7 +77,27 @@ func New(ctx context.Context, path string, opts Options) (*App, error) {
 		return nil, err
 	}
 	a.raw, a.rt = raw, rt
+	go a.prunePings(ctx)
 	return a, nil
+}
+
+// pingRetention is how long ping history is kept.
+const pingRetention = 30 * 24 * time.Hour
+
+// prunePings drops old ping history now and then daily.
+func (a *App) prunePings(ctx context.Context) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		if err := a.opts.Store.PrunePings(ctx, time.Now().Add(-pingRetention)); err != nil && ctx.Err() == nil {
+			slog.Warn("pruning ping history failed", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // Path is the config file path.

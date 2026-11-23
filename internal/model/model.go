@@ -150,3 +150,11 @@ type PingSample struct {
 	Key string
 	RTT time.Duration
 }
+
+// PingPoint is one stored ping run of a device.
+type PingPoint struct {
+	At     time.Time
+	Origin string
+	RTT    time.Duration
+	OK     bool // false: no answer
+}

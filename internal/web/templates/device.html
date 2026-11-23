@@ -44,6 +44,11 @@
 {{range .Others}}<tr><td><span class="pill {{if .Online}}bg-ok{{end}}"></span></td><td><a class="mono" href="/device?network={{.Network}}&amp;key={{.Key}}">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}}</a></td><td class="mono">{{.MAC}}</td><td>{{.Network}}</td><td>{{ago .LastSeen}}</td></tr>{{end}}
 </tbody></table></div>{{end}}
 </div>
+<h2>Ping history</h2>
+<div class="mb-6 grid gap-4">
+<section class="card min-w-0" data-ping-history data-network="{{.Network}}" data-key="{{.Key}}">{{if .Others}}<h3 class="sub mb-2">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}} · {{.Network}}</h3>{{end}}</section>
+{{range .Others}}<section class="card min-w-0" data-ping-history data-network="{{.Network}}" data-key="{{.Key}}"><h3 class="sub mb-2">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}} · {{.Network}}</h3></section>
+{{end}}</div>
 <h2>Events</h2>
 <ul class="event-list">
 {{range $.Events}}
@@ -54,3 +59,4 @@
 </ul>
 {{if $.Older}}<a class="btn" href="/device?network={{.Network}}&amp;key={{.Key}}&amp;before={{$.Older}}">Older →</a>{{end}}
 {{end}}{{end}}
+{{define "scripts"}}<script src="/static/ping-chart.js"></script>{{end}}

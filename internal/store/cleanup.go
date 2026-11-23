@@ -51,6 +51,7 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 				(SELECT f.key FROM device_pings AS f WHERE f.network = ?1 AND f.answered_at > device_pings.answered_at)`,
 			`UPDATE OR IGNORE device_pings SET network = ?2 WHERE network = ?1`,
 			`DELETE FROM device_pings WHERE network = ?1`,
+			`UPDATE ping_history SET network = ?2 WHERE network = ?1`,
 		}
 		for _, q := range stmts {
 			if _, err := tx.ExecContext(ctx, q, from, to); err != nil {
@@ -95,6 +96,7 @@ func (s *Store) DeleteNetworkData(ctx context.Context, name string) error {
 			`DELETE FROM machine_members WHERE network = ?`,
 			`DELETE FROM device_details WHERE network = ?`,
 			`DELETE FROM device_pings WHERE network = ?`,
+			`DELETE FROM ping_history WHERE network = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, name); err != nil {
 				return err
@@ -116,7 +118,8 @@ func (s *Store) DeleteDevice(ctx context.Context, network, key string) error {
 		}
 		for _, q := range []string{`DELETE FROM machine_members WHERE network = ? AND key = ?`,
 			`DELETE FROM device_details WHERE network = ? AND key = ?`,
-			`DELETE FROM device_pings WHERE network = ? AND key = ?`} {
+			`DELETE FROM device_pings WHERE network = ? AND key = ?`,
+			`DELETE FROM ping_history WHERE network = ? AND key = ?`} {
 			if _, err := tx.ExecContext(ctx, q, network, key); err != nil {
 				return err
 			}

@@ -82,6 +82,16 @@ var migrations = []string{
 		answered_at INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (network, key)
 	);`,
+	`CREATE TABLE ping_history (
+		id INTEGER PRIMARY KEY,
+		network TEXT NOT NULL,
+		key TEXT NOT NULL,
+		at INTEGER NOT NULL,
+		origin TEXT NOT NULL,
+		rtt_us INTEGER NOT NULL
+	);
+	CREATE INDEX ping_history_device ON ping_history(network, key, at);
+	CREATE INDEX ping_history_at ON ping_history(at);`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.
