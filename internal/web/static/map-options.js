@@ -1,7 +1,7 @@
 // What the map shows, remembered per browser.
 (function (root) {
   const KEY = "netmon.map.v1";
-  const LAYOUTS = ["radar", "sectors", "lanes"];
+  const LAYOUTS = ["radar", "sectors", "lanes", "classic"];
   const DEFAULTS = { layout: "radar", names: true, ips: false, ms: false, ports: false, rings: true, lines: true, offline: true, distance: true };
 
   function load(storage) {

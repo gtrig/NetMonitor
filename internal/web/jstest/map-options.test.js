@@ -7,7 +7,7 @@ test("defaults", () => {
   assert.deepEqual(O.load(mem()), { layout: "radar", names: true, ips: false, ms: false, ports: false, rings: true, lines: true, offline: true, distance: true });
 });
 test("round trip", () => {
-  const s = mem(), o = { ...O.DEFAULTS, layout: "lanes", ports: true, lines: false };
+  const s = mem(), o = { ...O.DEFAULTS, layout: "classic", ports: true, lines: false };
   O.save(s, o);
   assert.deepEqual(O.load(s), o);
 });

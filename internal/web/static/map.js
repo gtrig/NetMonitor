@@ -26,15 +26,60 @@
     { selector: "node[kind != 'net']:selected", style: { "border-color": v("--accent"), "border-width": 3 } },
     { selector: ".off", style: { "display": "none" } },
   ];
-  const cy = cytoscape({ container: document.getElementById("cy"), wheelSensitivity: 0.3, minZoom: 0.1, maxZoom: 5,
-    autoungrabify: true, style: graphStyle() });
+  // Classic: the plain topology view, with Cytoscape's own labels.
+  const classic = () => opts.layout === "classic";
+  const classicLabel = (n) => {
+    const d = n.data(), out = [];
+    if (opts.names || n.data("router") || d.kind === "router") out.push(d.label);
+    if (opts.ips && d.ip && d.ip !== d.label) out.push(d.ip);
+    if (opts.ms && d.rtt && d.status !== "offline") out.push(Object.values(d.rtt).map((x) => fmtMs(x.ms)).join(" / "));
+    return out.join("\n");
+  };
+  const classicStyle = () => [
+      { selector: "node", style: {
+        "label": classicLabel, "text-wrap": "wrap", "font-size": 10, "color": v("--text"), "text-valign": "bottom", "text-margin-y": 4,
+        "background-color": v("--ok"), "width": 18, "height": 18, "border-width": 2, "border-color": v("--surface"),
+        "text-background-color": v("--surface"), "text-background-opacity": 0.8, "text-background-padding": 2 } },
+      { selector: "node[kind = 'device'][!known]", style: { "background-color": v("--warn") } },
+      { selector: "node[status = 'offline']", style: { "background-color": v("--idle"), "opacity": 0.7 } },
+      { selector: "node[kind = 'router']", style: {
+        "shape": "round-rectangle", "width": 34, "height": 24, "background-color": v("--router"),
+        "font-weight": "bold", "font-size": 12 } },
+      { selector: "node[?router]", style: {
+        "shape": "round-rectangle", "width": 30, "height": 22, "border-color": v("--router"), "border-width": 3, "font-weight": "bold" } },
+      { selector: "node[kind = 'hop']", style: {
+        "shape": "diamond", "width": 14, "height": 14, "background-color": v("--idle"), "font-size": 9, "color": v("--muted") } },
+      { selector: "node[kind = 'net']", style: {
+        "shape": "round-rectangle", "background-color": v("--accent"), "background-opacity": 0.05,
+        "border-width": 1.5, "border-style": "dashed", "border-color": v("--accent"),
+        "label": "data(label)", "text-valign": "top", "text-halign": "center", "text-margin-y": -4,
+        "font-size": 13, "font-weight": "bold", "color": v("--accent"), "padding": 18,
+        "text-background-opacity": 0 } },
+      { selector: "edge[kind = 'member']", style: {
+        "line-style": "dashed", "line-color": v("--router"), "width": 1.5, "target-arrow-shape": "none" } },
+      { selector: "edge[source ^= 'hop:'], edge[target ^= 'hop:']", style: { "width": 2, "line-color": v("--router") } },
+      { selector: "node[kind = 'network'], node[kind = 'netmon']", style: {
+        "shape": "round-rectangle", "width": 30, "height": 20, "background-color": v("--muted") } },
+      { selector: "edge", style: {
+        "width": 1.2, "line-color": v("--border"), "curve-style": "bezier",
+        "label": (e) => (opts.ports ? e.data("label") || "" : ""), "font-size": 8, "color": v("--muted"), "text-rotation": "autorotate",
+        "text-background-color": v("--surface"), "text-background-opacity": 1 } },
+      { selector: "edge[source ^= 'router:'][target ^= 'router:']", style: { "width": 3, "line-color": v("--router") } },
+      { selector: ":selected", style: { "border-color": v("--accent"), "border-width": 3 } },
+    { selector: ".off", style: { "display": "none" } },
+  ];
+  const styleNow = () => (classic() ? classicStyle() : graphStyle());
 
-  let els = [], decor = [], hover = null;
+  const cy = cytoscape({ container: document.getElementById("cy"), wheelSensitivity: 0.3, minZoom: 0.1, maxZoom: 5,
+    style: styleNow() });
+
+  let graph = [], els = [], decor = [], hover = null;
   const trunkEnd = (n) => n.data("router") || ["router", "hop", "netmon"].includes(n.data("kind"));
 
   // apply puts the elements and their positions into the graph. Existing nodes glide to their new
   // place when animated; pan, zoom and selection stay unless refit.
   function apply({ animate = false, refit = false } = {}) {
+    if (classic()) return applyClassic(refit);
     const ids = new Set(els.map((e) => e.data.id));
     const { positions, decor: shapes } = MapLayout.layout(opts.layout, els, opts);
     decor = shapes;
@@ -70,6 +115,137 @@
     });
     if (refit) fit(positions);
     cy.forceRender();
+  }
+
+  // applyClassic keeps positions (also dragged ones) until something is added or removed.
+  function applyClassic(refit) {
+    decor = [];
+    const ids = new Set(els.map((e) => e.data.id));
+    const changed = els.some((e) => !cy.getElementById(e.data.id).length) || cy.elements().some((e) => !ids.has(e.id()));
+    if (changed) { cy.elements().remove(); cy.add(els.map((e) => ({ group: e.group, data: { ...e.data } }))); }
+    else for (const e of els) {
+      const cur = cy.getElementById(e.data.id), { id, parent, source, target, ...data } = e.data;
+      cur.data(data);
+      for (const k of ["rtt", "gatewayOf", "router", "machine"]) if (!(k in data)) cur.removeData(k);
+      if (e.group === "nodes" && (cur.data("parent") || undefined) !== parent) cur.move({ parent: parent ?? null });
+    }
+    cy.batch(() => {
+      cy.edges().forEach((e) => { e.toggleClass("off", !opts.lines); });
+      cy.nodes().forEach((n) => { n.toggleClass("off", !opts.offline && n.data("status") === "offline"); });
+    });
+    if (changed || refit) cy.nodes("[kind = 'net']").length ? boxLayout() : cose();
+    cy.style().update();
+    repaint();
+  }
+
+  const cose = () => cy.layout({ name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70,
+    nodeDimensionsIncludeLabels: true, randomize: true, nestingFactor: 0.8, gravity: 0.6, numIter: 2500,
+    componentSpacing: 80 }).run();
+
+  // boxLayout lays out the all-networks view deterministically: the network that ties the others
+  // together (the VPN) sits in the middle, each other network sits on its own side of it, routers
+  // inside the middle box face the network they serve, and each box holds its routers in the
+  // centre with hosts in rings around them.
+  function boxLayout() {
+    const isRouter = (n) => n.data("router") || n.data("kind") === "router";
+    const boxOf = (n) => (n.data("kind") === "net" ? n.id() : n.parent().length ? n.parent().id() : null);
+    const boxes = cy.nodes("[kind = 'net']").map((b) => b.id());
+    const tie = {};
+    cy.edges().forEach((e) => {
+      const a = boxOf(e.source()), b = boxOf(e.target());
+      if (!a || !b || a === b) return;
+      (tie[a] ??= {})[b] = (tie[a][b] || 0) + 1;
+      (tie[b] ??= {})[a] = (tie[b][a] || 0) + 1;
+    });
+    const score = (id) => [Object.keys(tie[id] || {}).length, Object.values(tie[id] || {}).reduce((x, y) => x + y, 0)];
+    const hub = boxes.slice().sort((a, b) => {
+      const [x1, y1] = score(a), [x2, y2] = score(b);
+      return x2 - x1 || y2 - y1 || a.localeCompare(b);
+    })[0];
+    const outer = boxes.filter((id) => id !== hub);
+    const angle = {};
+    outer.forEach((id, i) => { angle[id] = Math.PI + (2 * Math.PI * i) / outer.length; });
+
+    const place = (n, x, y) => n.position({ x, y });
+    // Routers in the centre, everything else in rings around them, centred on (0, 0).
+    const rings = (nodes) => {
+      const sorted = nodes.sort((a, b) => String(a.data("label")).localeCompare(String(b.data("label"))));
+      const routers = sorted.filter(isRouter), rest = sorted.filter((n) => !isRouter(n));
+      routers.forEach((n, i) => place(n, (i - (routers.length - 1) / 2) * 70, 0));
+      const base = routers.length > 1 ? routers.length * 35 : 0;
+      for (let i = 0, k = 1; i < rest.length; k++) {
+        const r = base + k * 75, m = Math.min(Math.max(1, Math.floor((2 * Math.PI * r) / 85)), rest.length - i);
+        for (let j = 0; j < m; j++) {
+          const a = (2 * Math.PI * j) / m - Math.PI / 2;
+          place(rest[i + j], r * Math.cos(a), r * Math.sin(a));
+        }
+        i += m;
+      }
+    };
+    const shift = (nodes, dx, dy) => nodes.forEach((n) => place(n, n.position("x") + dx, n.position("y") + dy));
+
+    // Middle box: routers facing an outer network go on that network's side.
+    const hubKids = cy.getElementById(hub).children();
+    const side = {}, middle = [];
+    hubKids.forEach((n) => {
+      const c = {};
+      n.connectedEdges().forEach((e) => {
+        const o = e.source().same(n) ? e.target() : e.source();
+        const b = boxOf(o);
+        if (b && b !== hub) c[b] = (c[b] || 0) + 1;
+      });
+      const best = Object.keys(c).sort((a, b) => c[b] - c[a] || a.localeCompare(b))[0];
+      best ? (side[best] ??= []).push(n) : middle.push(n);
+    });
+    rings(cy.collection(middle));
+    const r0 = (middle.length > 1 ? (75 * middle.length) / Math.PI : 0) + 160;
+    for (const [b, list] of Object.entries(side)) {
+      const a = angle[b] ?? 0, px = -Math.sin(a), py = Math.cos(a);
+      list.forEach((n, j) => {
+        const off = (j - (list.length - 1) / 2) * 70;
+        place(n, r0 * Math.cos(a) + px * off, r0 * Math.sin(a) + py * off);
+      });
+    }
+
+    const size = (nodes) => {
+      const bb = nodes.boundingBox({ includeLabels: true });
+      return nodes.length ? { w: bb.w + 40, h: bb.h + 40, cx: (bb.x1 + bb.x2) / 2, cy: (bb.y1 + bb.y2) / 2 } : { w: 80, h: 60, cx: 0, cy: 0 };
+    };
+    const hs = size(hubKids);
+    const gap = 140;
+    for (const id of outer) {
+      const kids = cy.getElementById(id).children();
+      rings(kids);
+      const os = size(kids), a = angle[id], c = Math.cos(a), s = Math.sin(a);
+      const d = Math.min(Math.abs(c) > 1e-6 ? ((hs.w + os.w) / 2 + gap) / Math.abs(c) : Infinity,
+        Math.abs(s) > 1e-6 ? ((hs.h + os.h) / 2 + gap) / Math.abs(s) : Infinity);
+      shift(kids, hs.cx + d * c - os.cx, hs.cy + d * s - os.cy);
+    }
+    // Anything outside the boxes (hops beyond the monitored networks) goes in a row underneath.
+    const loose = cy.nodes().filter((n) => n.data("kind") !== "net" && !n.parent().length);
+    if (loose.length) {
+      const bb = cy.nodes("[kind = 'net']").boundingBox();
+      loose.forEach((n, i) => place(n, bb.x1 + i * 90, bb.y2 + 80));
+    }
+    cy.fit(undefined, 30);
+  }
+
+  // switchLayout changes what is drawn: the layouts use different elements and styles.
+  function switchLayout() {
+    cy.elements().remove();
+    els = classic() ? graph : MapLayout.prepare(graph);
+    cy.autoungrabify(!classic());
+    cy.style(styleNow());
+    syncOptions();
+    apply({ refit: true });
+  }
+  // The scale options mean nothing in the classic view.
+  function syncOptions() {
+    for (const k of ["rings", "distance"]) {
+      const b = document.querySelector(`[data-opt=${k}]`);
+      b.disabled = classic();
+      b.parentElement.classList.toggle("opacity-50", classic());
+    }
   }
 
   function fit(positions) {
@@ -173,26 +349,29 @@
 
   function paint() {
     const z = cy.zoom(), pan = cy.pan(), sx = (x) => x * z + pan.x, sy = (y) => y * z + pan.y;
-    drawDecor(surface("decor"), z, sx, sy);
-    drawLabels(surface("labels"), z, sx, sy);
+    const under = surface("decor"), over = surface("labels");
+    if (classic()) return; // only clears them
+    drawDecor(under, z, sx, sy);
+    drawLabels(over, z, sx, sy);
   }
   let queued = false;
   const repaint = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; paint(); }); };
   cy.on("render", repaint);
   cy.on("mouseover", "node", (e) => { hover = e.target.id(); repaint(); });
   cy.on("mouseout", "node", () => { hover = null; repaint(); });
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { cy.style(graphStyle()); repaint(); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { cy.style(styleNow()); repaint(); });
 
   let seq = 0;
   // load fetches the graph and the ping jobs; a newer load wins over a slower older one.
   async function load({ fresh = true } = {}) {
     const mine = ++seq, network = netSel.value;
-    const [graph, jobs] = await Promise.all([
+    const [got, jobs] = await Promise.all([
       api("GET", "/api/graph" + (network ? "?network=" + encodeURIComponent(network) : "")),
       api("GET", "/api/jobs").catch(() => []),
     ]);
     if (mine !== seq) return;
-    els = MapLayout.prepare(graph);
+    graph = got;
+    els = classic() ? graph : MapLayout.prepare(graph);
     const open = current && els.some((e) => e.data.id === current.id());
     if (current && !open) { panel.hidden = true; current = null; }
     apply({ animate: !fresh, refit: fresh });
@@ -371,8 +550,12 @@
 
   layoutSel.value = opts.layout;
   layoutSel.addEventListener("change", () => {
-    opts.layout = layoutSel.value; MapOptions.save(storage, opts); apply({ refit: true });
+    opts.layout = layoutSel.value; MapOptions.save(storage, opts);
+    panel.hidden = true; current = null;
+    switchLayout();
   });
+  cy.autoungrabify(!classic());
+  syncOptions();
   const display = document.getElementById("display");
   display.querySelectorAll("[data-opt]").forEach((box) => {
     box.checked = opts[box.dataset.opt];

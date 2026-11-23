@@ -258,7 +258,7 @@ func TestAPIGraphIncludesRTT(t *testing.T) {
 func TestMapPageControls(t *testing.T) {
 	h, _, _ := newTest(t, nil)
 	body := do(h, "GET", "/map", "", false).Body.String()
-	for _, v := range []string{"radar", "sectors", "lanes"} {
+	for _, v := range []string{"radar", "sectors", "lanes", "classic"} {
 		if !strings.Contains(body, `<option value="`+v+`">`) {
 			t.Errorf("no layout %s", v)
 		}
