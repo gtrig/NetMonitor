@@ -296,12 +296,27 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	pings, err := s.Store.Pings(r.Context(), network)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
 	rt := s.rt()
+	// Times measured from elsewhere (before the network got a router, say) don't compare.
+	for ref, p := range pings {
+		origin := scheduler.NmapOrigin
+		if gw := rt.Gateways[ref.Network]; gw != "" {
+			origin = gw
+		}
+		if p.Origin != origin {
+			delete(pings, ref)
+		}
+	}
 	var nets []topology.NetInfo
 	for _, n := range rt.Config.Networks {
 		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR})
 	}
-	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines,
+	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines, Pings: pings,
 		Networks: nets, RouterAddrs: routerAddrs(rt.Config), Compound: network == "" && len(nets) > 1})
 	if els == nil {
 		els = []topology.Element{}

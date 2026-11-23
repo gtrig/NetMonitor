@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/gtrig/netmon/internal/model"
 )
@@ -320,4 +321,54 @@ func TestCompoundUnlinkedHostsAttachToConfiguredRouter(t *testing.T) {
 	if n["router:ATHome"]["parent"] != "net:ATLan" {
 		t.Fatalf("router parent = %v", n["router:ATHome"]["parent"])
 	}
+}
+
+func TestBuildRTTPerNetwork(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0).UTC()
+	a, b := deviceIn("lan", "ip:10.0.0.5", "10.0.0.5"), deviceIn("vpn", "ip:10.9.0.5", "10.9.0.5")
+	a.Port = "ether2"
+	refA, refB := model.MemberRef{Network: "lan", Key: a.Key}, model.MemberRef{Network: "vpn", Key: b.Key}
+	els := Build(Input{Devices: []model.Device{a, b}, Machines: map[model.MemberRef]int64{refA: 1, refB: 1},
+		Pings: map[model.MemberRef]model.Ping{refA: {RTT: 1500 * time.Microsecond, OK: true, At: at, Origin: "gw"},
+			refB: {Origin: "netmon"}}})
+	data := nodes(els)["machine:1"]
+	rtt, _ := data["rtt"].(map[string]rttJSON)
+	if len(rtt) != 1 || rtt["lan"] != (rttJSON{Ms: 1.5, At: at, Origin: "gw"}) {
+		t.Fatalf("rtt = %+v", data["rtt"])
+	}
+	if m := data["members"].([]memberJSON); m[0].Port != "ether2" || m[1].Port != "" {
+		t.Fatalf("members = %+v", m)
+	}
+}
+
+func TestBuildNoRTTWhenMissing(t *testing.T) {
+	els := Build(Input{Devices: []model.Device{device("ip:10.0.0.5", "10.0.0.5")}})
+	if _, ok := nodes(els)["device:ip:10.0.0.5"]["rtt"]; ok {
+		t.Fatal("rtt present")
+	}
+}
+
+func TestBuildGatewayOf(t *testing.T) {
+	gw := device("ip:10.0.0.1", "10.0.0.1")
+	host := device("ip:10.0.0.5", "10.0.0.5")
+	addr := map[string]netip.Addr{"core": gw.IP}
+	base := Input{Devices: []model.Device{gw, host}, Gateways: map[string]string{"lan": "core"},
+		Networks: []NetInfo{{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")}}}
+	check := func(name, id string, in Input) {
+		t.Helper()
+		for _, compound := range []bool{false, true} {
+			in.Compound = compound
+			got, _ := nodes(Build(in))[id]["gatewayOf"].([]string)
+			if len(got) != 1 || got[0] != "lan" {
+				t.Errorf("%s (compound %v): gatewayOf = %v", name, compound, got)
+			}
+		}
+	}
+	dev := base
+	dev.RouterAddrs = addr
+	check("device", "device:ip:10.0.0.1", dev)
+	mach := dev
+	mach.Machines = map[model.MemberRef]int64{{Network: "lan", Key: gw.Key}: 7}
+	check("machine", "machine:7", mach)
+	check("bare router", "router:core", base)
 }

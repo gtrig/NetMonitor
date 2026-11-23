@@ -37,6 +37,8 @@ type Input struct {
 	// Machines groups device rows into one node.
 	Machines map[model.MemberRef]int64
 	Networks []NetInfo
+	// Pings are the smoothed round-trip times of device rows.
+	Pings map[model.MemberRef]model.Ping
 	// Compound draws each network as a box holding its nodes; nodes in several networks sit
 	// outside the boxes with a "member" edge to each.
 	Compound bool
@@ -221,11 +223,13 @@ func Build(in Input) []Element {
 			}
 		}
 	}
+	gatewayOf := map[string][]string{} // node → networks whose configured router it is
 	// A network's configured router (Gateways) wins over the inferred one.
 	for _, n := range sortedKeys(in.Gateways) {
 		if name := in.Gateways[n]; name != "" {
 			if id, ok := resolve(model.NodeRef{Kind: "router", ID: name}); ok {
 				inferred[n] = id
+				gatewayOf[id] = append(gatewayOf[id], n)
 			}
 		}
 	}
@@ -354,6 +358,9 @@ func Build(in Input) []Element {
 	}
 
 	withParent := func(id string, data map[string]any) map[string]any {
+		if nets := gatewayOf[id]; len(nets) > 0 {
+			data["gatewayOf"] = nets
+		}
 		if p := parents[id]; p != "" {
 			data["parent"] = p
 		}
@@ -368,7 +375,7 @@ func Build(in Input) []Element {
 			"id": id, "kind": "hop", "label": ip.String(), "ip": ip.String(), "network": netOf(ip)})})
 	}
 	for _, id := range order {
-		els = append(els, Element{Group: "nodes", Data: withParent(id, deviceData(groups[id]))})
+		els = append(els, Element{Group: "nodes", Data: withParent(id, deviceData(groups[id], in.Pings))})
 	}
 
 	pairs := make([]string, 0, len(edgesByPair))
@@ -390,13 +397,22 @@ type memberJSON struct {
 	IP      string `json:"ip"`
 	MAC     string `json:"mac"`
 	Online  bool   `json:"online"`
+	Port    string `json:"port"`
 }
 
-func deviceData(g *group) map[string]any {
+// rttJSON is a device's round-trip time in one network.
+type rttJSON struct {
+	Ms     float64   `json:"ms"`
+	At     time.Time `json:"at"`
+	Origin string    `json:"origin"`
+}
+
+func deviceData(g *group, pings map[model.MemberRef]model.Ping) map[string]any {
 	first := g.members[0]
 	var label, hostname, vendor, port string
 	var ips, macs []string
 	var members []memberJSON
+	rtt := map[string]rttJSON{}
 	online, known := false, true
 	var firstSeen, lastSeen time.Time
 	for _, d := range g.members {
@@ -422,7 +438,10 @@ func deviceData(g *group) map[string]any {
 		if d.LastSeen.After(lastSeen) {
 			lastSeen = d.LastSeen
 		}
-		members = append(members, memberJSON{d.Network, d.Key, ip, d.MAC, d.Online})
+		members = append(members, memberJSON{d.Network, d.Key, ip, d.MAC, d.Online, d.Port})
+		if p := pings[model.MemberRef{Network: d.Network, Key: d.Key}]; p.OK {
+			rtt[d.Network] = rttJSON{float64(p.RTT.Microseconds()) / 1000, p.At, p.Origin}
+		}
 	}
 	ip := strings.Join(ips, ", ")
 	status := "offline"
@@ -438,6 +457,9 @@ func deviceData(g *group) map[string]any {
 	}
 	if !first.IP.IsValid() && label == "" && hostname == "" {
 		data["label"] = first.Key
+	}
+	if len(rtt) > 0 {
+		data["rtt"] = rtt
 	}
 	if g.router {
 		data["router"] = true

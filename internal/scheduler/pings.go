@@ -11,8 +11,8 @@ import (
 // PingInterval is how often a ping job runs.
 const PingInterval = 5 * time.Minute
 
-// nmapOrigin is the origin of round-trip times measured by nmap on the netmon host.
-const nmapOrigin = "netmon"
+// NmapOrigin is the origin of round-trip times measured by nmap on the netmon host.
+const NmapOrigin = "netmon"
 
 // Pinger measures round-trip times of addresses from one place.
 type Pinger interface {
@@ -90,5 +90,5 @@ func (s *Scheduler) recordNmapRTTs(ctx context.Context, obs model.Observations) 
 			rtts[h.IP] = h.RTT
 		}
 	}
-	return s.recordRTTs(ctx, obs.Network, nmapOrigin, rtts, func(netip.Addr) bool { return true })
+	return s.recordRTTs(ctx, obs.Network, NmapOrigin, rtts, func(netip.Addr) bool { return true })
 }

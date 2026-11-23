@@ -233,3 +233,24 @@ func TestDetailsAPI(t *testing.T) {
 		t.Fatalf("devices page lacks services summary")
 	}
 }
+
+func TestAPIGraphIncludesRTT(t *testing.T) {
+	h, st, _ := newTest(t, nil)
+	ctx := context.Background()
+	devs, _ := st.Devices(ctx, "lan")
+	if len(devs) == 0 {
+		t.Fatal("no seeded device")
+	}
+	sample := []model.PingSample{{Key: devs[0].Key, RTT: 2500 * time.Microsecond}}
+	// "other" is not where lan is measured from now, so its times are left out.
+	if err := st.RecordPings(ctx, "lan", "other", time.Now(), sample); err != nil {
+		t.Fatal(err)
+	}
+	if body := do(h, "GET", "/api/graph?network=lan", "", false).Body.String(); strings.Contains(body, `"rtt"`) {
+		t.Fatalf("times of another origin shown: %s", body)
+	}
+	st.RecordPings(ctx, "lan", "netmon", time.Now(), sample)
+	if body := do(h, "GET", "/api/graph?network=lan", "", false).Body.String(); !strings.Contains(body, `"ms":2.5`) {
+		t.Fatalf("no time in %s", body)
+	}
+}
