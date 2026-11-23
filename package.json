@@ -3,6 +3,7 @@
   "private": true,
   "description": "Builds the Tailwind stylesheet of the web UI (dev only; the output is committed and embedded).",
   "scripts": {
+    "test": "node --test internal/web/jstest/*.test.js",
     "css": "tailwindcss -i internal/web/styles/app.css -o internal/web/static/app.css --minify",
     "css:watch": "tailwindcss -i internal/web/styles/app.css -o internal/web/static/app.css --watch",
     "css:check": "tailwindcss -i internal/web/styles/app.css -o node_modules/.cache/app.css --minify && cmp node_modules/.cache/app.css internal/web/static/app.css"
