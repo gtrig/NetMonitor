@@ -63,7 +63,7 @@
     let s = "";
     if (!o.mini) {
       for (const v of f.sc.ticks) s += `<line class="grid" x1="${f.m.l}" x2="${n(f.m.l + f.w)}" y1="${n(f.y(v))}" y2="${n(f.y(v))}"/><text x="${f.m.l - 8}" y="${n(f.y(v) + 4)}" text-anchor="end">${v} ms</text>`;
-      for (const k of timeTicks(data.from, data.to, Math.max(2, Math.floor(f.w / 80)))) {
+      for (const k of timeTicks(data.from, data.to, Math.max(2, Math.floor(f.w / 62)))) {
         const d = new Date(k.t);
         const label = k.day || (d.getHours() === 0 && d.getMinutes() === 0) ? d.toLocaleDateString([], { day: "numeric", month: "short" }) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         s += `<text x="${n(f.x(k.t))}" y="${n(base + 24)}" text-anchor="middle">${label}</text>`;
