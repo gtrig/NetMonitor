@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/source"
@@ -118,5 +119,13 @@ func TestCollectReportsProgress(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Percent != 42 {
 		t.Fatalf("progress = %+v", got)
+	}
+}
+
+func TestParseSRTT(t *testing.T) {
+	hosts, _, err := ParseXML([]byte(`<nmaprun><host><status state="up"/><address addr="10.0.0.1" addrtype="ipv4"/><times srtt="224" rttvar="5000" to="100000"/></host>
+		<host><status state="up"/><address addr="10.0.0.2" addrtype="ipv4"/></host></nmaprun>`))
+	if err != nil || len(hosts) != 2 || hosts[0].RTT != 224*time.Microsecond || hosts[1].RTT != 0 {
+		t.Fatalf("hosts = %+v, %v", hosts, err)
 	}
 }

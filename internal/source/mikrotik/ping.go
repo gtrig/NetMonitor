@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-routeros/routeros/v3"
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/source"
 )
@@ -58,6 +59,11 @@ func (p *Pinger) Ping(ctx context.Context, addrs []netip.Addr) (map[netip.Addr]t
 			}
 			lastErr = err
 			failed++
+			var refused *routeros.DeviceError // the router answered: it is not dead
+			if errors.As(err, &refused) {
+				inRow = 0
+				continue
+			}
 			if inRow++; inRow >= maxPingErrors {
 				return out, fmt.Errorf("%s: %w", p.Name(), err)
 			}

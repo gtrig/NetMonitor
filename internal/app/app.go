@@ -215,8 +215,10 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 		return identity
 	}
 	routers := map[string]*mikrotik.Source{}
+	byName := map[string]config.Router{}
 	for _, r := range cfg.Routers {
 		routers[r.Name] = mikrotik.New(r, resolve)
+		byName[r.Name] = r
 	}
 	targets := map[string]*snmp.Source{}
 	for _, t := range cfg.SNMPTargets {
@@ -242,6 +244,11 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 				continue
 			}
 			jobs = append(jobs, scheduler.Job{Network: n, Source: src, Interval: ref.Interval.Duration, OfflineAfter: n.OfflineAfterFor(ref)})
+		}
+	}
+	for _, n := range cfg.Networks {
+		if r, ok := byName[gateways[n.Name]]; ok {
+			jobs = append(jobs, scheduler.Job{Network: n, Ping: mikrotik.NewPinger(r), Interval: scheduler.PingInterval})
 		}
 	}
 	return jobs, gateways

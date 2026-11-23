@@ -3,6 +3,7 @@ package source
 import (
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
@@ -60,5 +61,14 @@ func TestMergeDropsLinksToFilteredDevices(t *testing.T) {
 	})
 	if len(o.Links) != 1 || o.Links[0].B.ID != "ap" {
 		t.Fatalf("links = %+v", o.Links)
+	}
+}
+
+func TestMergeKeepsRTT(t *testing.T) {
+	ip := netip.MustParseAddr("10.0.0.1")
+	obs := Merge(config.Network{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")}, model.Observations{Hosts: []model.Host{
+		{IP: ip, MAC: "aa:00:00:00:00:01"}, {IP: ip, RTT: time.Millisecond}}})
+	if len(obs.Hosts) != 1 || obs.Hosts[0].RTT != time.Millisecond {
+		t.Fatalf("hosts = %+v", obs.Hosts)
 	}
 }

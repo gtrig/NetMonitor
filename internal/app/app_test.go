@@ -168,3 +168,19 @@ func TestOrderRenames(t *testing.T) {
 		t.Fatalf("swap: %v", got)
 	}
 }
+
+func TestDefaultBuildPingJobs(t *testing.T) {
+	cfg := &config.Config{Routers: []config.Router{{Name: "gw", Address: "10.0.0.1:8728"}}, Networks: []config.Network{
+		{Name: "lan", Sources: []config.SourceRef{{Type: "router", Ref: "gw"}, {Type: "nmap"}}},
+		{Name: "vpn", Sources: []config.SourceRef{{Type: "nmap"}}}}}
+	jobs, _ := DefaultBuild(cfg)
+	var got []string
+	for _, j := range jobs {
+		if j.Ping != nil {
+			got = append(got, j.Network.Name+" "+j.Name()+" "+j.Interval.String())
+		}
+	}
+	if len(got) != 1 || got[0] != "lan ping:gw 5m0s" {
+		t.Fatalf("ping jobs = %v", got)
+	}
+}

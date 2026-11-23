@@ -18,6 +18,8 @@ type Host struct {
 	Source   string
 	// NameFromDNS marks Hostname as reverse-DNS derived (lower priority than DHCP lease names).
 	NameFromDNS bool
+	// RTT is the round-trip time from the netmon host (0 = not measured).
+	RTT time.Duration
 }
 
 // NodeRef identifies a node in the topology. Kind is "router" or "device".

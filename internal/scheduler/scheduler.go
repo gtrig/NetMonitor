@@ -46,11 +46,12 @@ type DetailScanner interface {
 	Scan(ctx context.Context, targets []netip.Addr) ([]model.HostDetails, error)
 }
 
-// Job is one source collecting one network: presence (Source) or details (Details).
+// Job is one source collecting one network: presence (Source), details (Details) or ping times (Ping).
 type Job struct {
 	Network      config.Network
 	Source       source.Source
 	Details      DetailScanner
+	Ping         Pinger
 	Interval     time.Duration
 	OfflineAfter time.Duration
 }
@@ -59,6 +60,9 @@ type Job struct {
 func (j Job) Name() string {
 	if j.Details != nil {
 		return j.Details.Name()
+	}
+	if j.Ping != nil {
+		return j.Ping.Name()
 	}
 	return j.Source.Name()
 }
@@ -173,13 +177,15 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 func (s *Scheduler) runGuarded(ctx context.Context, i int) {
 	s.setStatusAt(i, func(st *JobStatus) { st.State = StateQueued })
-	select {
-	case s.sem <- struct{}{}:
-	case <-ctx.Done():
-		s.setStatusAt(i, func(st *JobStatus) { st.State = StateIdle })
-		return
+	if s.jobs[i].Ping == nil { // pings are light and must not hold up collections
+		select {
+		case s.sem <- struct{}{}:
+		case <-ctx.Done():
+			s.setStatusAt(i, func(st *JobStatus) { st.State = StateIdle })
+			return
+		}
+		defer func() { <-s.sem }()
 	}
-	defer func() { <-s.sem }()
 	if err := s.RunOnce(ctx, s.jobs[i]); err != nil && ctx.Err() == nil {
 		slog.Warn("collection failed", "network", s.jobs[i].Network.Name, "source", s.jobs[i].Name(), "err", err)
 	}
@@ -190,7 +196,7 @@ func (s *Scheduler) runGuarded(ctx context.Context, i int) {
 func (s *Scheduler) ScanNow(network string) error {
 	found := false
 	for i, j := range s.jobs {
-		if j.Network.Name == network && j.Details == nil {
+		if j.Network.Name == network && j.Source != nil {
 			found = true
 			select {
 			case s.trigger[i] <- struct{}{}:
@@ -243,7 +249,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.status {
-		if s.jobs[i].Source == j.Source && s.jobs[i].Details == j.Details && s.jobs[i].Network.Name == j.Network.Name {
+		if s.jobs[i].Source == j.Source && s.jobs[i].Details == j.Details && s.jobs[i].Ping == j.Ping && s.jobs[i].Network.Name == j.Network.Name {
 			f(&s.status[i])
 		}
 	}
@@ -253,7 +259,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 func (s *Scheduler) thresholds(network string) map[string]time.Duration {
 	out := map[string]time.Duration{}
 	for _, j := range s.jobs {
-		if j.Network.Name == network && j.Details == nil {
+		if j.Network.Name == network && j.Source != nil {
 			out[j.Source.Name()] = j.OfflineAfter
 		}
 	}
@@ -296,6 +302,9 @@ func (s *Scheduler) RunOnce(ctx context.Context, j Job) error {
 func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
 	if j.Details != nil {
 		return s.runDetails(ctx, j.Network.Name, j.Details, "")
+	}
+	if j.Ping != nil {
+		return s.runPings(ctx, j.Network.Name, j.Ping)
 	}
 	obs, err := j.Source.Collect(ctx, j.Network)
 	if err != nil {
@@ -346,6 +355,9 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job) error {
 		return err
 	}
 	events = append(events, offEvents...)
+	if err := s.recordNmapRTTs(ctx, obs); err != nil {
+		slog.Warn("storing ping times failed", "network", name, "err", err)
+	}
 	if err := s.st.AddEvents(ctx, events); err != nil {
 		return err
 	}

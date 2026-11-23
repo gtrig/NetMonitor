@@ -92,6 +92,9 @@ func combine(a, b model.Host) model.Host {
 	if b.Port != "" {
 		a.Port = b.Port
 	}
+	if a.RTT == 0 {
+		a.RTT = b.RTT
+	}
 	if a.Source == "" {
 		a.Source = b.Source
 	}

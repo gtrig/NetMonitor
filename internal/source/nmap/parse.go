@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/netip"
+	"time"
 
 	"github.com/gtrig/netmon/internal/model"
 )
@@ -24,6 +25,9 @@ type xmlHost struct {
 	Hostnames []struct {
 		Name string `xml:"name,attr"`
 	} `xml:"hostnames>hostname"`
+	Times struct {
+		SRTT int64 `xml:"srtt,attr"` // microseconds
+	} `xml:"times"`
 	Hops []struct {
 		IP string `xml:"ipaddr,attr"`
 	} `xml:"trace>hop"`
@@ -58,6 +62,9 @@ func ParseXML(data []byte) ([]model.Host, []model.Link, error) {
 		if len(xh.Hostnames) > 0 {
 			h.Hostname = xh.Hostnames[0].Name
 			h.NameFromDNS = true // nmap names come from PTR lookups
+		}
+		if xh.Times.SRTT > 0 {
+			h.RTT = time.Duration(xh.Times.SRTT) * time.Microsecond
 		}
 		hosts = append(hosts, h)
 
