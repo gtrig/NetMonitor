@@ -152,7 +152,7 @@
 
   const canEdit = panel.dataset.canEdit === "true";
   let current = null; // node shown in the panel
-  const ext = (href, text) => `<a class="btn small" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(text)} ↗</a>`;
+  const ext = (href, text) => `<a class="btn btn-sm" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(text)} ↗</a>`;
   const hostOf = (ip) => (ip.includes(":") ? `[${ip}]` : ip);
   const ipsOf = (d) => (d.members && d.members.length ? d.members.map((m) => m.ip) : String(d.ip || "").split(", ")).filter(Boolean);
 
@@ -204,37 +204,37 @@
     if (d.kind === "net") {
       const kids = n.children();
       const on = kids.filter((c) => c.data("status") === "online").length;
-      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2>
-        <p class="muted">${kids.length} nodes · ${on} online</p>
-        <div class="actions"><button class="btn small" type="button" data-scan="${esc(d.network)}">Scan now</button>
-        <a class="btn small" href="/map?network=${encodeURIComponent(d.network)}">Only this network</a>
+      panel.innerHTML = `<button class="btn btn-sm close float-right">×</button><h2>${esc(d.label)}</h2>
+        <p class="my-2 text-muted">${kids.length} nodes · ${on} online</p>
+        <div class="mt-2 mb-1 flex flex-wrap gap-1.5"><button class="btn btn-sm" type="button" data-scan="${esc(d.network)}">Scan now</button>
+        <a class="btn btn-sm" href="/map?network=${encodeURIComponent(d.network)}">Only this network</a>
         ${ext("/map?network=" + encodeURIComponent(d.network), "New tab")}</div>`;
     } else if (d.kind !== "device") {
-      panel.innerHTML = `<button class="btn small close">×</button><h2>${esc(d.label)}</h2><p class="muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>` +
-        (d.ip ? `<div class="actions">${openLinks([`http://${hostOf(d.ip)}/`])}
-          <button class="btn small" type="button" data-act="copy" data-ip="${esc(d.ip)}">Copy IP</button></div>` : "");
+      panel.innerHTML = `<button class="btn btn-sm close float-right">×</button><h2>${esc(d.label)}</h2><p class="my-2 text-muted">${esc(d.kind === "hop" ? "router hop (from traceroute)" : d.kind)}${d.network ? " in " + esc(d.network) : ""} · ${n.degree()} links</p>` +
+        (d.ip ? `<div class="mt-2 mb-1 flex flex-wrap gap-1.5">${openLinks([`http://${hostOf(d.ip)}/`])}
+          <button class="btn btn-sm" type="button" data-act="copy" data-ip="${esc(d.ip)}">Copy IP</button></div>` : "");
     } else {
       const members = d.members || [];
       const ref = (m) => `data-network="${esc(m.network)}" data-key="${esc(m.key)}"`;
-      const memberList = members.length > 1 ? `<h3 class="sub">Addresses</h3><table class="members"><tbody>${members.map((m) =>
-        `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono small">${esc(m.mac)}</td><td><span class="pill ${m.online ? "ok" : "idle"}"></span></td></tr>
-        ${canEdit ? `<tr class="member-acts"><td colspan="4">${d.machine ? `<button class="btn small" type="button" data-act="split" ${ref(m)} title="Remove this address from the machine">Split</button>` : ""}
-          <button class="btn small danger" type="button" data-act="forget" ${ref(m)} title="Remove this address; it comes back if seen again">Forget</button></td></tr>` : ""}`).join("")}</tbody></table>` : "";
+      const memberList = members.length > 1 ? `<h3 class="sub">Addresses</h3><table class="mini-table"><tbody>${members.map((m) =>
+        `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono text-xs">${esc(m.mac)}</td><td><span class="pill ${m.online ? "bg-ok" : ""}"></span></td></tr>
+        ${canEdit ? `<tr><td class="space-x-1 pb-1" colspan="4">${d.machine ? `<button class="btn btn-sm" type="button" data-act="split" ${ref(m)} title="Remove this address from the machine">Split</button>` : ""}
+          <button class="btn btn-sm btn-danger" type="button" data-act="forget" ${ref(m)} title="Remove this address; it comes back if seen again">Forget</button></td></tr>` : ""}`).join("")}</tbody></table>` : "";
       const ip = ipsOf(d)[0] || "";
-      const actions = `<h3 class="sub">Actions</h3><div class="actions"><span class="open-links">${openLinks(webLinks([], ipsOf(d)))}</span>
-        ${ip ? `<button class="btn small" type="button" data-act="copy" data-ip="${esc(ip)}">Copy IP</button>
+      const actions = `<h3 class="sub">Actions</h3><div class="mt-2 mb-1 flex flex-wrap gap-1.5"><span class="open-links contents">${openLinks(webLinks([], ipsOf(d)))}</span>
+        ${ip ? `<button class="btn btn-sm" type="button" data-act="copy" data-ip="${esc(ip)}">Copy IP</button>
         ${ext("/devices?q=" + encodeURIComponent(ip), "View in Devices")}` : ""}
-        ${canEdit && members.length <= 1 ? `<button class="btn small danger" type="button" data-act="forget" ${ref(members[0] || { network: d.network, key: d.key })}>Forget</button>` : ""}</div>`;
-      panel.innerHTML = `<button class="btn small close">×</button>
+        ${canEdit && members.length <= 1 ? `<button class="btn btn-sm btn-danger" type="button" data-act="forget" ${ref(members[0] || { network: d.network, key: d.key })}>Forget</button>` : ""}</div>`;
+      panel.innerHTML = `<button class="btn btn-sm close float-right">×</button>
         <h2>${esc(d.label)}</h2>${actions}
-        <dl><dt>Status</dt><dd>${esc(d.status)}</dd><dt>IP</dt><dd class="mono">${esc(d.ip)}</dd>
-        <dt>MAC</dt><dd class="mono">${esc(d.mac)}</dd><dt>Vendor</dt><dd>${esc(d.vendor)}</dd>
-        <dt>Hostname</dt><dd>${esc(d.hostname)}</dd><dt>Port</dt><dd class="mono">${esc(d.port)}</dd>
-        <dt>Network</dt><dd>${esc(d.network)}</dd><dt>Last seen</dt><dd>${esc(ago(d.lastSeen))}</dd>
-        <dt>First seen</dt><dd>${esc(ago(d.firstSeen))}</dd></dl>${memberList}
-        <div class="details-box"><span class="muted small">Loading services…</span></div>
-        <form><input class="label" name="label" placeholder="Label" value="${esc(n.data("userLabel") || "")}" aria-label="Label">
-        <label class="check"><input type="checkbox" name="known" ${d.known ? "checked" : ""}> known device</label>
+        <dl class="my-2.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px]"><dt class="text-muted">Status</dt><dd class="min-w-0 break-all">${esc(d.status)}</dd><dt class="text-muted">IP</dt><dd class="mono min-w-0 break-all">${esc(d.ip)}</dd>
+        <dt class="text-muted">MAC</dt><dd class="mono min-w-0 break-all">${esc(d.mac)}</dd><dt class="text-muted">Vendor</dt><dd class="min-w-0 break-all">${esc(d.vendor)}</dd>
+        <dt class="text-muted">Hostname</dt><dd class="min-w-0 break-all">${esc(d.hostname)}</dd><dt class="text-muted">Port</dt><dd class="mono min-w-0 break-all">${esc(d.port)}</dd>
+        <dt class="text-muted">Network</dt><dd class="min-w-0 break-all">${esc(d.network)}</dd><dt class="text-muted">Last seen</dt><dd class="min-w-0 break-all">${esc(ago(d.lastSeen))}</dd>
+        <dt class="text-muted">First seen</dt><dd class="min-w-0 break-all">${esc(ago(d.firstSeen))}</dd></dl>${memberList}
+        <div class="details-box"><span class="text-muted text-xs">Loading services…</span></div>
+        <form class="mt-3 grid gap-2"><input class="label control" name="label" placeholder="Label" value="${esc(n.data("userLabel") || "")}" aria-label="Label">
+        <label class="check-label"><input type="checkbox" name="known" ${d.known ? "checked" : ""}> known device</label>
         <button class="btn">Save</button></form>`;
       panel.querySelector("form").addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -268,14 +268,14 @@
     if (links) links.innerHTML = openLinks(webLinks(scanned, members.map((m) => m.ip).filter(Boolean)));
     box.innerHTML = `<h3 class="sub">Services</h3>` + members.map((m) => {
       const x = byRef.get(m.network + "|" + m.key);
-      const head = members.length > 1 ? `<div class="small mono">${esc(m.ip)} <span class="muted">${esc(m.network)}</span></div>` : "";
-      const body = !x ? `<div class="muted small">not scanned yet</div>`
-        : (x.os ? `<div class="small">OS: ${esc(x.os)} <span class="muted">(${x.osAccuracy}%)</span></div>` : "") +
-          (x.ports.length ? `<table class="ports"><tbody>${x.ports.map((p) => `<tr><td class="mono">${p.port}/${esc(p.proto)}</td><td>${esc(p.service)}</td><td class="small">${esc(p.product)} ${esc(p.version)}</td></tr>`).join("")}</tbody></table>`
-            : `<div class="muted small">no open ports</div>`) +
-          `<div class="muted small">scanned ${esc(ago(x.scannedAt))}</div>`;
-      return `<div class="member-details">${head}${body}
-        <button class="btn small" type="button" data-scan-net="${esc(m.network)}" data-scan-key="${esc(m.key)}">${x ? "Rescan" : "Scan details now"}</button></div>`;
+      const head = members.length > 1 ? `<div class="text-xs mono">${esc(m.ip)} <span class="text-muted">${esc(m.network)}</span></div>` : "";
+      const body = !x ? `<div class="text-muted text-xs">not scanned yet</div>`
+        : (x.os ? `<div class="text-xs">OS: ${esc(x.os)} <span class="text-muted">(${x.osAccuracy}%)</span></div>` : "") +
+          (x.ports.length ? `<table class="mini-table"><tbody>${x.ports.map((p) => `<tr><td class="mono">${p.port}/${esc(p.proto)}</td><td>${esc(p.service)}</td><td class="text-xs">${esc(p.product)} ${esc(p.version)}</td></tr>`).join("")}</tbody></table>`
+            : `<div class="text-muted text-xs">no open ports</div>`) +
+          `<div class="text-muted text-xs">scanned ${esc(ago(x.scannedAt))}</div>`;
+      return `<div class="mt-1.5 mb-2.5">${head}${body}
+        <button class="btn btn-sm" type="button" data-scan-net="${esc(m.network)}" data-scan-key="${esc(m.key)}">${x ? "Rescan" : "Scan details now"}</button></div>`;
     }).join("");
     box.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-scan-key]");

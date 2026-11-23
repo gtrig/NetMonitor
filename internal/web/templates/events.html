@@ -1,18 +1,18 @@
 {{define "content"}}
-<div class="bar">
+<div class="mb-3 flex flex-wrap items-center gap-4">
   <h1>Events</h1>
-  <form method="get" class="filters">
-    <select name="network" onchange="this.form.submit()">
+  <form method="get" class="flex flex-wrap items-center gap-2">
+    <select class="control" name="network" onchange="this.form.submit()">
       <option value="">All networks</option>
       {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </form>
 </div>
-<ul class="events full">
+<ul class="event-list">
 {{range .Events}}
-  <li class="ev ev-{{.Type}}"><time title="{{ago .At}}">{{ts .At}}</time><span class="tag">{{.Network}}</span><span class="type">{{.Type}}</span>{{.Message}}</li>
+  <li data-type="{{.Type}}"><time class="sm:min-w-[140px]" title="{{ago .At}}">{{ts .At}}</time><span class="tag">{{.Network}}</span><span class="mono text-xs text-muted">{{.Type}}</span>{{.Message}}</li>
 {{else}}
-  <li class="muted">No events.</li>
+  <li class="text-muted">No events.</li>
 {{end}}
 </ul>
 {{if .Older}}<a class="btn" href="/events?before={{.Older}}{{if .Network}}&network={{.Network}}{{end}}">Older →</a>{{end}}

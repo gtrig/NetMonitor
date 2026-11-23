@@ -3,9 +3,9 @@ const toastEl = document.getElementById("toast");
 let toastTimer;
 function toast(msg) {
   toastEl.textContent = msg;
-  toastEl.classList.add("show");
+  toastEl.dataset.show = "";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2500);
+  toastTimer = setTimeout(() => delete toastEl.dataset.show, 2500);
 }
 
 // Absolute same-origin URL: fetch() rejects relative URLs when the page URL carries
@@ -58,6 +58,16 @@ if (table) {
       }
     } catch (err) { toast("Save failed: " + err.message); }
   });
+  // Clicking a row opens the device's page; ctrl/cmd/middle click opens it in a new tab.
+  const openRow = (e) => {
+    const row = e.target.closest("tr[data-key]");
+    if (!row || e.target.closest("a, button, input, label, details") || String(getSelection())) return;
+    const href = row.querySelector(".device-link").href;
+    if (e.ctrlKey || e.metaKey || e.button === 1) window.open(href, "_blank", "noopener");
+    else if (e.button === 0) location.href = href;
+  };
+  table.addEventListener("click", openRow);
+  table.addEventListener("auxclick", (e) => { if (e.button === 1) openRow(e); });
   const q = document.getElementById("q");
   const only = document.getElementById("onlyUnknown");
   const apply = () => {
@@ -105,4 +115,50 @@ if (table) {
   only.addEventListener("change", apply);
   const initial = new URLSearchParams(location.search).get("q");
   if (initial) { q.value = initial; apply(); }
+}
+
+// Device details page.
+const devicePage = document.getElementById("device");
+if (devicePage) {
+  const ref = { network: devicePage.dataset.network, key: devicePage.dataset.key };
+  const scannedAt = async () => (await api("GET", "/api/details?network=" + encodeURIComponent(ref.network)))
+    .find((d) => d.key === ref.key)?.scannedAt;
+  devicePage.addEventListener("change", async (e) => {
+    try {
+      if (e.target.classList.contains("known")) {
+        await patchDevice(ref.key, { known: e.target.checked });
+        toast(e.target.checked ? "Marked as known" : "Marked as unreviewed");
+      } else if (e.target.classList.contains("label")) {
+        await patchDevice(ref.key, { label: e.target.value.trim() });
+        toast("Label saved");
+      }
+    } catch (err) { toast("Save failed: " + err.message); }
+  });
+  devicePage.addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    try {
+      if (b.classList.contains("scan-details")) {
+        const before = await scannedAt();
+        await api("POST", "/api/details/scan", ref);
+        b.disabled = true;
+        b.textContent = "Scanning…";
+        toast("Detailed scan started; this page reloads when it is done");
+        const until = Date.now() + 15 * 60000;
+        const poll = setInterval(async () => {
+          try {
+            if (await scannedAt() !== before) { clearInterval(poll); location.reload(); return; }
+          } catch { /* try again */ }
+          if (Date.now() > until) { clearInterval(poll); b.disabled = false; b.textContent = "Scan again"; toast("No result yet; check the Overview page"); }
+        }, 4000);
+      } else if (b.classList.contains("split-off")) {
+        await api("POST", "/api/machines/split", ref);
+        location.reload();
+      } else if (b.classList.contains("forget")) {
+        if (!confirm(`Forget ${ref.key} in ${ref.network}? It comes back if a scan sees it again.`)) return;
+        await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));
+        location.href = "/devices";
+      }
+    } catch (err) { toast("Failed: " + err.message); }
+  });
 }

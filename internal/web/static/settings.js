@@ -14,7 +14,7 @@
 
   async function load() {
     const res = await fetch(url("/api/settings"));
-    if (!res.ok) { root.innerHTML = `<p class="err">Could not load settings: ${esc(await res.text())}</p>`; return; }
+    if (!res.ok) { root.innerHTML = `<p class="ml-4.5 text-xs wrap-break-word text-bad">Could not load settings: ${esc(await res.text())}</p>`; return; }
     const data = await res.json();
     meta = { can_edit: data.can_edit, event_types: data.event_types, path: data.path };
     state = {
@@ -31,31 +31,31 @@
   // ---- field builders (return HTML; inputs carry data-path into state) ----
   const ro = () => (meta.can_edit ? "" : "disabled");
   function text(path, label, value, opts = {}) {
-    return `<label class="field ${opts.wide ? "wide" : ""}"><span>${esc(label)}</span>
+    return `<label class="field ${opts.cls || ""}"><span>${esc(label)}</span>
       <input data-path="${path}" value="${esc(value)}" placeholder="${esc(opts.ph || "")}" ${opts.type ? `type="${opts.type}"` : ""} ${ro()}></label>`;
   }
   function check(path, label, value) {
-    return `<label class="field check"><input type="checkbox" data-path="${path}" ${value ? "checked" : ""} ${ro()}><span>${esc(label)}</span></label>`;
+    return `<label class="field field-check"><input type="checkbox" data-path="${path}" ${value ? "checked" : ""} ${ro()}><span>${esc(label)}</span></label>`;
   }
   function select(path, label, value, options, opts = {}) {
     const o = options.map((v) => `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(v || opts.empty || "—")}</option>`).join("");
-    return `<label class="field"><span>${esc(label)}</span><select data-path="${path}" ${opts.restructure ? "data-restructure" : ""} ${ro()}>${o}</select></label>`;
+    return `<label class="field ${opts.cls || ""}"><span>${esc(label)}</span><select data-path="${path}" ${opts.restructure ? "data-restructure" : ""} ${ro()}>${o}</select></label>`;
   }
   function secret(path, label, value) {
     const isRef = /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value || "");
     const set = value === MASKED;
     const ph = set ? "set — leave empty to keep" : "value or ${ENV_NAME}";
-    return `<label class="field"><span>${esc(label)} ${isRef ? '<em class="muted">from .env</em>' : set ? '<em class="muted">set</em>' : ""}</span>
+    return `<label class="field"><span>${esc(label)} ${isRef ? '<em class="not-italic">from .env</em>' : set ? '<em class="not-italic">set</em>' : ""}</span>
       <input data-path="${path}" data-secret type="${isRef ? "text" : "password"}" autocomplete="new-password"
         value="${isRef ? esc(value) : ""}" placeholder="${esc(ph)}" ${ro()}></label>`;
   }
-  const del = (kind, i) => meta.can_edit ? `<button class="btn small danger" data-del="${kind}" data-i="${i}" type="button">Delete</button>` : "";
-  const add = (kind, label) => meta.can_edit ? `<button class="btn small" data-add="${kind}" type="button">+ ${label}</button>` : "";
+  const del = (kind, i) => meta.can_edit ? `<button class="btn btn-sm btn-danger" data-del="${kind}" data-i="${i}" type="button">Delete</button>` : "";
+  const add = (kind, label) => meta.can_edit ? `<button class="btn btn-sm" data-add="${kind}" type="button">+ ${label}</button>` : "";
 
   function section(title, kind, addLabel, items, hint) {
-    return `<section class="set-section"><div class="set-head"><h2>${title}</h2>${add(kind, addLabel)}</div>
-      ${hint ? `<p class="muted small">${hint}</p>` : ""}
-      <div class="items">${items || '<p class="muted">None yet.</p>'}</div></section>`;
+    return `<section class="mb-7"><div class="mb-1 flex items-center gap-3"><h2 class="mb-0">${title}</h2>${add(kind, addLabel)}</div>
+      ${hint ? `<p class="my-2 text-xs text-muted">${hint}</p>` : ""}
+      <div class="mt-2 grid gap-3">${items || '<p class="text-muted">None yet.</p>'}</div></section>`;
   }
 
   function renderNetworks() {
@@ -65,31 +65,31 @@
       const sources = n.sources.map((s, j) => {
         const p = `networks.${i}.sources.${j}`;
         const refs = s.type === "router" ? routerNames : s.type === "snmp" ? snmpNames : [];
-        return `<div class="source-row">
-          ${select(`${p}.type`, "Source", s.type, ["router", "snmp", "nmap", "services"], { restructure: true })}
-          ${s.type === "nmap" || s.type === "services" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: s.type === "services" ? "-p 1-65535" : "-T4" })
-            : select(`${p}.ref`, s.type === "router" ? "Router" : "SNMP target", s.ref || "", ["", ...refs], { empty: "choose…" })}
-          ${text(`${p}.interval`, "Every", s.interval, { ph: s.type === "services" ? "6h" : "5m" })}
+        return `<div class="flex w-full flex-wrap items-end gap-2">
+          ${select(`${p}.type`, "Source", s.type, ["router", "snmp", "nmap", "services"], { restructure: true, cls: "w-[120px]" })}
+          ${s.type === "nmap" || s.type === "services" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: s.type === "services" ? "-p 1-65535" : "-T4", cls: "min-w-40 max-w-[360px] flex-1" })
+            : select(`${p}.ref`, s.type === "router" ? "Router" : "SNMP target", s.ref || "", ["", ...refs], { empty: "choose…", cls: "min-w-40 max-w-[360px] flex-1" })}
+          ${text(`${p}.interval`, "Every", s.interval, { ph: s.type === "services" ? "6h" : "5m", cls: "w-[90px]" })}
           ${s.type === "nmap" ? check(`${p}.traceroute`, "Traceroute", s.traceroute) : ""}
-          ${meta.can_edit ? `<button class="btn small danger" data-del-source="${i}" data-j="${j}" type="button" aria-label="Remove source">×</button>` : ""}
+          ${meta.can_edit ? `<button class="btn btn-sm btn-danger" data-del-source="${i}" data-j="${j}" type="button" aria-label="Remove source">×</button>` : ""}
         </div>`;
       }).join("");
-      return `<article class="item"><div class="item-head"><b>${esc(n.name || "new network")}</b>${del("networks", i)}</div>
-        <div class="grid">
+      return `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>${esc(n.name || "new network")}</b><span class="flex-1"></span>${del("networks", i)}</div>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">
           ${text(`networks.${i}.name`, "Name", n.name)}
           ${text(`networks.${i}.cidr`, "CIDR", n.cidr, { ph: "192.168.1.0/24" })}
           ${text(`networks.${i}.exclude`, "Exclude IPs", n.exclude.join(", "), { ph: "comma separated" })}
           ${text(`networks.${i}.offline_after`, "Offline after", n.offline_after, { ph: "auto (3 missed scans)" })}
         </div>
-        <div class="sources"><span class="sub">Discovery sources</span>${sources}
-          ${meta.can_edit ? `<button class="btn small" data-add-source="${i}" type="button">+ Source</button>` : ""}</div>
+        <div class="mt-3 grid justify-items-start gap-2"><span class="sub">Discovery sources</span>${sources}
+          ${meta.can_edit ? `<button class="btn btn-sm" data-add-source="${i}" type="button">+ Source</button>` : ""}</div>
       </article>`;
     }).join("");
   }
 
   function renderRouters() {
-    return state.routers.map((r, i) => `<article class="item"><div class="item-head"><b>${esc(r.name || "new router")}</b> <span class="muted small">MikroTik RouterOS API</span>${del("routers", i)}</div>
-      <div class="grid">
+    return state.routers.map((r, i) => `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>${esc(r.name || "new router")}</b> <span class="text-muted text-xs">MikroTik RouterOS API</span><span class="flex-1"></span>${del("routers", i)}</div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">
         ${text(`routers.${i}.name`, "Name", r.name)}
         ${text(`routers.${i}.address`, "Address", r.address, { ph: "192.168.88.1:8729" })}
         ${text(`routers.${i}.username`, "Username", r.username, { ph: "netmon-ro" })}
@@ -102,8 +102,8 @@
   function renderSNMP() {
     return state.snmp_targets.map((t, i) => {
       const v3 = t.version === "v3";
-      return `<article class="item"><div class="item-head"><b>${esc(t.name || "new target")}</b>${del("snmp_targets", i)}</div>
-      <div class="grid">
+      return `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>${esc(t.name || "new target")}</b><span class="flex-1"></span>${del("snmp_targets", i)}</div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">
         ${text(`snmp_targets.${i}.name`, "Name", t.name)}
         ${text(`snmp_targets.${i}.address`, "Address", t.address, { ph: "192.168.88.1" })}
         ${text(`snmp_targets.${i}.port`, "Port", t.port || "", { ph: "161", type: "number" })}
@@ -128,21 +128,21 @@
         text(`${p}.smtp_port`, "Port", c.smtp_port || "", { ph: "587", type: "number" }) + check(`${p}.starttls`, "STARTTLS", c.starttls) +
         text(`${p}.username`, "Username", c.username) + secret(`${p}.password`, "Password", c.password) +
         text(`${p}.from`, "From", c.from) + text(`${p}.to`, "To", (c.to || []).join(", "), { ph: "comma separated" });
-      const test = meta.can_edit && c.original_name ? `<button class="btn small" data-test="${esc(c.original_name)}" type="button">Send test</button>` : "";
-      return `<article class="item"><div class="item-head"><b>${esc(c.name || "new channel")}</b>${test}${del("channels", i)}</div>
-        <div class="grid">${text(`${p}.name`, "Name", c.name)}${select(`${p}.type`, "Type", c.type, ["telegram", "discord", "email"], { restructure: true })}${fields}</div></article>`;
+      const test = meta.can_edit && c.original_name ? `<button class="btn btn-sm" data-test="${esc(c.original_name)}" type="button">Send test</button>` : "";
+      return `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>${esc(c.name || "new channel")}</b><span class="flex-1"></span>${test}${del("channels", i)}</div>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">${text(`${p}.name`, "Name", c.name)}${select(`${p}.type`, "Type", c.type, ["telegram", "discord", "email"], { restructure: true })}${fields}</div></article>`;
     }).join("");
   }
 
   function checks(path, all, chosen, emptyMeansAll) {
     const set = new Set(chosen || []);
-    return `<div class="checks">${all.map((v) => `<label class="check"><input type="checkbox" data-list="${path}" value="${esc(v)}" ${set.has(v) ? "checked" : ""} ${ro()}>${esc(v)}</label>`).join("")}
-      ${emptyMeansAll ? `<span class="muted small">${set.size ? "" : "(none ticked = all)"}</span>` : ""}</div>`;
+    return `<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">${all.map((v) => `<label class="check-label"><input type="checkbox" data-list="${path}" value="${esc(v)}" ${set.has(v) ? "checked" : ""} ${ro()}>${esc(v)}</label>`).join("")}
+      ${emptyMeansAll ? `<span class="text-muted text-xs">${set.size ? "" : "(none ticked = all)"}</span>` : ""}</div>`;
   }
 
   function renderRules() {
-    return state.rules.map((r, i) => `<article class="item"><div class="item-head"><b>Rule ${i + 1}</b>${del("rules", i)}</div>
-      <div class="rule"><span class="sub">Events</span>${checks(`rules.${i}.events`, meta.event_types, r.events, true)}
+    return state.rules.map((r, i) => `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>Rule ${i + 1}</b><span class="flex-1"></span>${del("rules", i)}</div>
+      <div class="grid gap-1.5"><span class="sub">Events</span>${checks(`rules.${i}.events`, meta.event_types, r.events, true)}
       <span class="sub">Networks</span>${checks(`rules.${i}.networks`, state.networks.map((n) => n.name), r.networks, true)}
       <span class="sub">Send to</span>${checks(`rules.${i}.channels`, state.channels.map((c) => c.name), r.channels, false)}
       ${check(`rules.${i}.only_unknown`, "Only devices not marked as known", r.only_unknown)}</div></article>`).join("");
@@ -240,7 +240,7 @@
 
   function showErrors(list) {
     errorsEl.hidden = !list.length;
-    errorsEl.innerHTML = list.length ? `<b>Not saved:</b><ul>${list.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+    errorsEl.innerHTML = list.length ? `<b>Not saved:</b><ul class="mt-1.5 list-disc pl-5">${list.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
     if (list.length) errorsEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -263,7 +263,7 @@
 
   // ---- stored data of networks no longer in the config ----
   const staleEl = document.createElement("section");
-  staleEl.className = "set-section";
+  staleEl.className = "mb-7";
   staleEl.hidden = true;
   root.insertAdjacentElement("afterend", staleEl);
 
@@ -273,14 +273,14 @@
     const stale = data.filter((n) => !n.configured && n.devices > 0);
     const targets = data.filter((n) => n.configured).map((n) => n.name);
     staleEl.hidden = !stale.length;
-    staleEl.innerHTML = `<div class="set-head"><h2>Stored data from removed networks</h2></div>
-      <p class="muted small">Devices kept under network names that are no longer configured (for example after a rename). Merge them into a configured network, or delete them. Events are kept either way.</p>
-      <div class="items">${stale.map((n) => `<article class="item"><div class="item-head"><b>${esc(n.name)}</b>
-        <span class="muted small">${n.devices} devices · ${n.events} events</span></div>
-        ${meta.can_edit ? `<div class="grid">
+    staleEl.innerHTML = `<div class="mb-1 flex items-center gap-3"><h2 class="mb-0">Stored data from removed networks</h2></div>
+      <p class="my-2 text-xs text-muted">Devices kept under network names that are no longer configured (for example after a rename). Merge them into a configured network, or delete them. Events are kept either way.</p>
+      <div class="mt-2 grid gap-3">${stale.map((n) => `<article class="card px-3.5 py-3"><div class="mb-2.5 flex items-center gap-2"><b>${esc(n.name)}</b>
+        <span class="text-muted text-xs">${n.devices} devices · ${n.events} events</span></div>
+        ${meta.can_edit ? `<div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-3.5 gap-y-2.5">
           <label class="field"><span>Merge into</span><select data-stale-into="${esc(n.name)}">${targets.map((t) => `<option>${esc(t)}</option>`).join("")}</select></label>
-          <button class="btn" type="button" data-stale-merge="${esc(n.name)}" ${targets.length ? "" : "disabled"}>Merge</button>
-          <button class="btn danger" type="button" data-stale-delete="${esc(n.name)}">Delete</button></div>` : ""}
+          <button class="btn self-end" type="button" data-stale-merge="${esc(n.name)}" ${targets.length ? "" : "disabled"}>Merge</button>
+          <button class="btn btn-danger self-end" type="button" data-stale-delete="${esc(n.name)}">Delete</button></div>` : ""}
       </article>`).join("")}</div>`;
   }
 

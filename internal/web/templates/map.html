@@ -1,18 +1,18 @@
 {{define "content"}}
-<div class="map-bar">
+<div class="mb-3 flex flex-wrap items-center gap-4">
   <h1>Network map</h1>
   <label>Network
-    <select id="net">
+    <select class="control" id="net">
       <option value="">All networks</option>
       {{range .Networks}}<option value="{{.Name}}" {{if eq $.Network .Name}}selected{{end}}>{{.Name}}</option>{{end}}
     </select>
   </label>
-  <span class="legend"><i class="lg-router"></i>router <i class="lg-hop"></i>hop <i class="lg-online"></i>online <i class="lg-unknown"></i>unreviewed <i class="lg-offline"></i>offline</span>
+  <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted"><i class="ml-2 size-2.5 rounded-[2px] bg-router"></i>router <i class="ml-2 size-2.5 rotate-45 scale-80 rounded-[1px] bg-idle"></i>hop <i class="ml-2 size-2.5 rounded-full bg-ok"></i>online <i class="ml-2 size-2.5 rounded-full bg-warn"></i>unreviewed <i class="ml-2 size-2.5 rounded-full bg-idle"></i>offline</span>
   <button class="btn" id="relayout">Re-layout</button>
 </div>
-<div class="map-wrap">
-  <div id="cy" aria-label="Network topology graph"></div>
-  <aside id="panel" data-can-edit="{{.CanEdit}}" hidden></aside>
+<div class="relative h-[calc(100vh-130px)] min-h-[400px] overflow-hidden rounded-t-[10px] border bg-surface">
+  <div id="cy" class="absolute! inset-0" aria-label="Network topology graph"></div>
+  <aside id="panel" class="absolute top-3 right-3 z-1 max-h-[calc(100%-24px)] w-[340px] max-w-[calc(100%-24px)] overflow-y-auto rounded-[10px] border bg-surface p-3.5 shadow-[0_6px_24px_rgb(0_0_0/.15)]" data-can-edit="{{.CanEdit}}" hidden></aside>
 </div>
 {{end}}
 {{define "scripts"}}<script src="/static/cytoscape.min.js"></script><script src="/static/map.js"></script>{{end}}

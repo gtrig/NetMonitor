@@ -93,6 +93,7 @@ Use **Send test** on the Overview page to check each channel.
 ```bash
 go test ./...
 go build -o netmon ./cmd/netmon && ./netmon -config config/config.yaml
+npm ci && npm run css        # only after changing UI markup or styles (Tailwind CSS v4)
 ```
 
 Running locally without root, nmap falls back to TCP pings and finds no MAC addresses. Run as root or `sudo setcap cap_net_raw,cap_net_admin+eip $(which nmap)` with `NMAP_PRIVILEGED=1` for ARP discovery.

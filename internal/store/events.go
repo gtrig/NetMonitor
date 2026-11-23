@@ -10,6 +10,7 @@ import (
 // EventFilter selects events. Zero values mean "no filter"; Limit defaults to 100.
 type EventFilter struct {
 	Network string
+	Devices []model.MemberRef // only events of these devices
 	Limit   int
 	Before  int64 // only events with ID < Before
 }
@@ -40,6 +41,14 @@ func (s *Store) Events(ctx context.Context, f EventFilter) ([]model.Event, error
 	if f.Network != "" {
 		q += ` AND network = ?`
 		args = append(args, f.Network)
+	}
+	if len(f.Devices) > 0 {
+		q += ` AND (0`
+		for _, d := range f.Devices {
+			q += ` OR (network = ? AND device_key = ?)`
+			args = append(args, d.Network, d.Key)
+		}
+		q += `)`
 	}
 	if f.Before > 0 {
 		q += ` AND id < ?`

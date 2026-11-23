@@ -1,60 +1,60 @@
 {{define "content"}}
 <h1>Overview</h1>
-<section class="cards">
+<section class="mt-4 mb-7 grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-4">
 {{range .Networks}}
   <article class="card">
-    <div class="card-head">
-      <div><h2>{{.Name}}</h2><span class="muted mono">{{.CIDR}}</span></div>
+    <div class="flex items-start justify-between gap-2">
+      <div><h2>{{.Name}}</h2><span class="text-muted mono">{{.CIDR}}</span></div>
       <button class="btn" data-scan="{{.Name}}">Scan now</button>
     </div>
-    <div class="stats">
-      <div><b>{{.Online}}</b><span>online</span></div>
-      <div><b>{{.Total}}</b><span>known devices</span></div>
-      <div class="{{if .Unknown}}warn{{end}}"><b>{{.Unknown}}</b><span>unreviewed</span></div>
+    <div class="my-3.5 flex gap-6">
+      <div><b class="block text-2xl/[1.1]">{{.Online}}</b><span class="text-muted text-xs">online</span></div>
+      <div><b class="block text-2xl/[1.1]">{{.Total}}</b><span class="text-muted text-xs">known devices</span></div>
+      <div><b class="block text-2xl/[1.1] {{if .Unknown}}text-warn{{end}}">{{.Unknown}}</b><span class="text-muted text-xs">unreviewed</span></div>
     </div>
-    <ul class="jobs">
+    <ul class="mb-3 grid gap-1">
     {{range .Jobs}}
-      <li><span class="pill {{if .LastErr}}bad{{else if .LastOK.IsZero}}idle{{else}}ok{{end}}"></span>
-        <span class="mono">{{.Source}}</span> <span class="muted">every {{.Interval}} · last ok {{ago .LastOK}}</span>
-        {{if .LastErr}}<div class="err">{{.LastErr}}</div>{{end}}</li>
+      <li><span class="pill {{if .LastErr}}bg-bad{{else if not .LastOK.IsZero}}bg-ok{{end}}"></span>
+        <span class="mono">{{.Source}}</span> <span class="text-muted">every {{.Interval}} · last ok {{ago .LastOK}}</span>
+        {{if .LastErr}}<div class="ml-4.5 text-xs wrap-break-word text-bad">{{.LastErr}}</div>{{end}}</li>
     {{end}}
     </ul>
-    <div class="card-links"><a href="/map?network={{.Name}}">Map →</a><a href="/devices?network={{.Name}}">Devices →</a></div>
+    <div class="flex gap-4"><a href="/map?network={{.Name}}">Map →</a><a href="/devices?network={{.Name}}">Devices →</a></div>
   </article>
 {{else}}
-  <p class="muted">No networks configured.</p>
+  <p class="text-muted">No networks configured.</p>
 {{end}}
 </section>
 
-<section class="jobs-panel">
+<section class="my-6">
   <h2>Scan jobs</h2>
   <div class="table-wrap">
-  <table id="jobs">
+  <table id="jobs" class="data-table">
     <thead><tr><th>Network</th><th>Source</th><th>State</th><th>Progress</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
-    <tbody><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+    <tbody><tr><td colspan="7" class="text-muted">Loading…</td></tr></tbody>
   </table>
   </div>
 </section>
 
-<section class="split">
+<section class="grid grid-cols-1 gap-6 min-[801px]:grid-cols-[2fr_1fr]">
   <div>
     <h2>Recent changes</h2>
-    <ul class="events">
+    <ul class="event-list">
     {{range .Events}}
-      <li class="ev ev-{{.Type}}"><time title="{{ts .At}}">{{ago .At}}</time><span class="tag">{{.Network}}</span>{{.Message}}</li>
+      <li data-type="{{.Type}}"><time title="{{ts .At}}">{{ago .At}}</time><span class="tag">{{.Network}}</span>{{.Message}}</li>
     {{else}}
-      <li class="muted">Nothing yet. The first scan creates a baseline.</li>
+      <li class="text-muted">Nothing yet. The first scan creates a baseline.</li>
     {{end}}
     </ul>
     <a href="/events">All events →</a>
   </div>
   <div>
     <h2>Notification channels</h2>
-    <ul class="channels">
+    <ul class="grid gap-2">
     {{range .Channels}}
-      <li><span class="mono">{{.Name}}</span> <span class="muted">{{.Type}}</span> <button class="btn small" data-test="{{.Name}}">Send test</button></li>
+      <li class="flex items-center gap-2"><span class="mono">{{.Name}}</span> <span class="text-muted">{{.Type}}</span> <button class="btn btn-sm ml-auto" data-test="{{.Name}}">Send test</button></li>
     {{else}}
-      <li class="muted">No channels configured.</li>
+      <li class="text-muted">No channels configured.</li>
     {{end}}
     </ul>
   </div>

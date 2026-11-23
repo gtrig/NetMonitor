@@ -1,0 +1,56 @@
+{{define "content"}}{{with .Device}}
+<p class="text-xs mb-3"><a href="/devices">← Devices</a></p>
+<div class="mb-3 flex flex-wrap items-center gap-4">
+  <h1><span class="pill {{if .Online}}bg-ok{{end}}"></span>{{.Name}}</h1>
+  <span class="text-muted">{{if .Online}}online{{else}}offline{{end}}</span>
+  {{if not .Known}}<span class="tag">unreviewed</span>{{end}}
+</div>
+<div id="device" data-key="{{.Key}}" data-network="{{.Network}}">
+<div class="flex flex-wrap items-center gap-2 mb-4">
+  {{range .Links}}<a class="btn btn-sm" href="{{.}}" target="_blank" rel="noopener noreferrer">Open {{.}} ↗</a>{{end}}
+  <button class="btn btn-sm scan-details" type="button">{{if .Details}}Rescan details{{else}}Scan details now{{end}}</button>
+  {{if $.CanEdit}}{{if .Machine}}<button class="btn btn-sm split-off" type="button" title="Remove this address from its machine">Split from machine</button>{{end}}
+  <button class="btn btn-sm btn-danger forget" type="button" title="Remove this device; it comes back if seen again">Forget</button>{{end}}
+</div>
+<div class="mb-6 grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(340px,100%),1fr))]">
+  <section class="card min-w-0 overflow-x-auto">
+    <h2>Details</h2>
+    <dl class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5">
+      <dt class="text-muted">Label</dt><dd class="min-w-0 wrap-break-word"><input class="label control w-full max-w-[260px]" value="{{.Label}}" placeholder="add a label" maxlength="200" aria-label="Label"></dd>
+      <dt class="text-muted">Known</dt><dd class="min-w-0 wrap-break-word"><input type="checkbox" class="known" {{if .Known}}checked{{end}} aria-label="Mark as known"></dd>
+      <dt class="text-muted">IP</dt><dd class="mono min-w-0 wrap-break-word">{{if .IP.IsValid}}{{.IP}}{{else}}—{{end}}</dd>
+      <dt class="text-muted">MAC</dt><dd class="mono min-w-0 wrap-break-word">{{or .MAC "—"}}</dd>
+      <dt class="text-muted">Vendor</dt><dd class="min-w-0 wrap-break-word">{{or .Vendor "—"}}</dd>
+      <dt class="text-muted">Hostname</dt><dd class="min-w-0 wrap-break-word">{{or .Hostname "—"}}</dd>
+      <dt class="text-muted">Port</dt><dd class="mono min-w-0 wrap-break-word">{{or .Port "—"}}</dd>
+      <dt class="text-muted">Network</dt><dd class="min-w-0 wrap-break-word"><a href="/devices?network={{.Network}}">{{.Network}}</a></dd>
+      <dt class="text-muted">First seen</dt><dd class="min-w-0 wrap-break-word">{{ts .FirstSeen}}</dd>
+      <dt class="text-muted">Last seen</dt><dd title="{{ts .LastSeen}}">{{ago .LastSeen}}</dd>
+      <dt class="text-muted">Sources</dt><dd class="min-w-0 wrap-break-word">{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{else}}—{{end}}</dd>
+    </dl>
+  </section>
+  <section class="card min-w-0 overflow-x-auto">
+    <h2>Services</h2>
+    {{with .Details}}
+      {{if .OS}}<p class="mb-3">OS: {{.OS}} <span class="text-muted">({{.OSAccuracy}}%)</span></p>{{end}}
+      {{if .Ports}}<table class="mini-table text-[13px]"><tbody>{{range .Ports}}<tr><td class="mono">{{.Port}}/{{.Proto}}</td><td>{{.Service}}</td><td>{{.Product}} {{.Version}}{{if .Extra}} <span class="text-muted">({{.Extra}})</span>{{end}}</td></tr>{{end}}</tbody></table>
+      {{else}}<p class="text-muted">No open ports found.</p>{{end}}
+      <p class="text-muted text-xs mt-3">scanned {{ago .ScannedAt}}</p>
+    {{else}}<p class="text-muted">Not scanned yet.</p>{{end}}
+  </section>
+</div>
+{{if .Others}}<h2>Other addresses of this machine</h2>
+<div class="table-wrap mb-6"><table class="data-table"><tbody>
+{{range .Others}}<tr><td><span class="pill {{if .Online}}bg-ok{{end}}"></span></td><td><a class="mono" href="/device?network={{.Network}}&amp;key={{.Key}}">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}}</a></td><td class="mono">{{.MAC}}</td><td>{{.Network}}</td><td>{{ago .LastSeen}}</td></tr>{{end}}
+</tbody></table></div>{{end}}
+</div>
+<h2>Events</h2>
+<ul class="event-list">
+{{range $.Events}}
+  <li data-type="{{.Type}}"><time class="sm:min-w-[140px]" title="{{ago .At}}">{{ts .At}}</time><span class="tag">{{.Network}}</span><span class="mono text-xs text-muted">{{.Type}}</span>{{.Message}}</li>
+{{else}}
+  <li class="text-muted">No events.</li>
+{{end}}
+</ul>
+{{if $.Older}}<a class="btn" href="/device?network={{.Network}}&amp;key={{.Key}}&amp;before={{$.Older}}">Older →</a>{{end}}
+{{end}}{{end}}

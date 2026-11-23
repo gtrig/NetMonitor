@@ -1,0 +1,92 @@
+/* Source of the web UI stylesheet. Build with `npm run css`; the output, static/app.css, is
+   committed and embedded in the binary. Layout lives as utilities in the markup; the components
+   below are only the primitives shared by Go templates and JS-rendered markup. */
+@import "tailwindcss" source(none);
+@source "../templates/*.html";
+@source "../static/{app,jobs,map,settings}.js";
+
+/* Semantic colors; map.js reads the same variables for the graph. */
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --border: #e2e5ea; --text: #1c2330; --muted: #6b7484;
+  --accent: #2563eb; --ok: #16a34a; --warn: #d97706; --bad: #dc2626; --idle: #9aa3b2;
+  --router: #4f46e5; --card-shadow: 0 1px 2px rgb(0 0 0 / .05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218; --surface: #171b23; --border: #272d38; --text: #e5e8ee; --muted: #8d96a7;
+    --accent: #60a5fa; --ok: #22c55e; --warn: #f59e0b; --bad: #f87171; --idle: #5b6475;
+    --router: #818cf8; --card-shadow: none; color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-page: var(--bg);
+  --color-surface: var(--surface);
+  --color-line: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-idle: var(--idle);
+  --color-router: var(--router);
+  --shadow-card: var(--card-shadow);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* stripe-<color>: colored bar on the left edge of a row. */
+@utility stripe-* {
+  box-shadow: inset 3px 0 --value(--color-*);
+}
+
+@layer base {
+  *, ::before, ::after { border-color: var(--color-line); }
+  body { @apply bg-page text-fg font-sans text-sm/normal; }
+  a { @apply text-accent hover:underline; }
+  h1 { @apply text-xl font-bold; }
+  h2 { @apply mb-2 text-[15px] font-bold; }
+}
+
+@layer components {
+  .btn { @apply inline-block cursor-pointer rounded-md border bg-surface px-3 py-[5px] text-fg hover:border-accent hover:no-underline disabled:cursor-default disabled:opacity-50; }
+  .btn-sm { @apply px-2 py-0.5 text-xs; }
+  .btn-primary { @apply border-accent bg-accent text-white; }
+  .btn-danger { @apply text-bad hover:border-bad; }
+  .control { @apply rounded-md border bg-surface px-2 py-[5px] text-fg; }
+  .check-label { @apply flex items-center gap-1 text-muted; }
+  .card { @apply rounded-[10px] border bg-surface p-4 shadow-card; }
+  .tag { @apply rounded-sm border bg-page px-1.5 text-[11px] text-muted; }
+  .pill { @apply mr-1.5 inline-block size-[9px] rounded-full bg-idle align-middle; }
+  .sub { @apply text-xs font-semibold text-muted; }
+  .mono { @apply font-mono text-[13px]; }
+
+  .table-wrap { @apply overflow-x-auto rounded-[10px] border bg-surface; }
+  .data-table { @apply w-full; }
+  .data-table > * > tr > * { @apply border-b px-2.5 py-[7px] text-left whitespace-nowrap; }
+  .data-table > thead > tr > th { @apply sticky top-0 bg-page text-xs font-semibold text-muted; }
+  .mini-table { @apply my-1 w-full text-xs; }
+  .mini-table > tbody > tr > td { @apply border-b py-px pr-1.5; }
+
+  .event-list { @apply mb-3 rounded-[10px] border bg-surface; }
+  .event-list > li { @apply flex flex-wrap items-baseline gap-2.5 border-b px-3 py-2 last:border-b-0; }
+  .event-list time { @apply min-w-16 text-xs tabular-nums text-muted; }
+  .event-list > [data-type="device_new"] { @apply stripe-warn; }
+  .event-list > [data-type="device_offline"] { @apply stripe-idle; }
+  .event-list > [data-type="device_back_online"] { @apply stripe-ok; }
+  .event-list > [data-type="mac_changed_for_ip"] { @apply stripe-bad; }
+
+  .state { @apply rounded-[10px] border px-2 py-px text-xs text-muted; }
+  .state[data-state="running"] { @apply border-accent text-accent; }
+  .state[data-state="queued"] { @apply border-warn text-warn; }
+
+  .field { @apply grid gap-[3px] text-xs text-muted; }
+  .field > input:not([type="checkbox"]), .field > select { @apply w-full rounded-md border bg-page px-2 py-[5px] text-sm text-fg disabled:opacity-75; }
+  .field-check { @apply flex items-center gap-1.5 self-end pb-1.5 text-[13px] text-fg; }
+  .banner { @apply scroll-mt-16 mb-4 rounded-lg border border-warn bg-[color-mix(in_srgb,var(--warn)_10%,var(--surface))] px-3.5 py-2.5; }
+  .banner-bad { @apply border-bad bg-[color-mix(in_srgb,var(--bad)_10%,var(--surface))]; }
+}

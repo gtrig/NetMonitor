@@ -92,7 +92,7 @@ var funcs = template.FuncMap{
 // New returns the HTTP handler.
 func New(d Deps) http.Handler {
 	s := &server{Deps: d, pages: map[string]*template.Template{}}
-	for _, p := range []string{"dashboard", "map", "devices", "events", "settings"} {
+	for _, p := range []string{"dashboard", "map", "devices", "device", "events", "settings"} {
 		s.pages[p] = template.Must(template.New("layout.html").Funcs(funcs).
 			ParseFS(templateFS, "templates/layout.html", "templates/"+p+".html"))
 	}
@@ -103,6 +103,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /{$}", s.dashboard)
 	mux.HandleFunc("GET /map", s.page("map", "Network map"))
 	mux.HandleFunc("GET /devices", s.devicesPage)
+	mux.HandleFunc("GET /device", s.devicePage)
 	mux.HandleFunc("GET /events", s.eventsPage)
 	mux.HandleFunc("GET /api/networks", s.apiNetworks)
 	mux.HandleFunc("GET /api/graph", s.apiGraph)
@@ -439,6 +440,7 @@ type pageData struct {
 	Active   string
 	Networks []networkSummary
 	Devices  []deviceRow
+	Device   *deviceView
 	Events   []model.Event
 	Channels []config.Channel
 	Network  string
