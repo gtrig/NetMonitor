@@ -4,6 +4,7 @@ const L = require("../static/map-layout.js");
 
 const node = (data) => ({ group: "nodes", data });
 const edge = (source, target) => ({ group: "edges", data: { id: "e:" + source + target, source, target, kind: "link" } });
+const member = (s, t) => { const e = edge(s, t); e.data.kind = "member"; return e; };
 const net = (n) => node({ id: "net:" + n, kind: "net", network: n, label: n });
 const dev = (id, ms, x = {}) => node({ id, kind: "device", label: id, status: "online", networks: ["lan"], network: "lan", parent: "net:lan",
   members: [{ network: "lan", port: x.port || "" }], ...(ms == null ? {} : { rtt: { lan: { ms } } }), ...x });
@@ -82,6 +83,8 @@ test("distance off: equal radii and no scale", () => {
     assert.ok(near(dist(mode, p.a, p.gw), dist(mode, p.b, p.gw)) && near(dist(mode, p.a, p.gw), dist(mode, p.c, p.gw)));
     assert.ok(!decor.some((d) => d.kind === "ring"));
   }
+  const { positions: e } = run("radar", lan(dev("a", 1), dev("b", 2), dev("c", 3), dev("d", 4)), { distance: false });
+  assert.ok(near(dist("radar", e.a, e.b), dist("radar", e.b, e.c)) && near(dist("radar", e.c, e.d), dist("radar", e.d, e.a)));
   const { positions: p, decor } = run("lanes", lan(dev("a", 1), dev("b", 200), dev("c", 300)), { distance: false });
   assert.ok(near(p.b.x - p.a.x, p.c.x - p.b.x));
   assert.ok(!decor.some((d) => d.kind === "tick"));
@@ -119,4 +122,12 @@ test("prepare turns a network stand-in node into the netmon marker", () => {
   assert.equal(els.filter((e) => e.group === "nodes" && e.data.id === "netmon:lan").length, 1);
   assert.ok(els.some((e) => e.data.source === "netmon:lan" && e.data.target === "a"));
   assert.ok(!els.some((e) => e.data.id === "network:lan"));
+});
+
+test("prepare: lines to a network end at its centre, and a moved gateway keeps its VPN link", () => {
+  const els = L.prepare([net("lan"), net("vpn"), gw("gw", "lan", { networks: ["lan", "vpn"], parent: "net:vpn" }),
+    dev("m", 1, { networks: ["lan", "vpn"], parent: "net:vpn" }), member("gw", "net:lan"), member("m", "net:lan")]);
+  const ends = els.filter((e) => e.group === "edges").map((e) => [e.data.source, e.data.target].join(">"));
+  assert.deepEqual(ends.sort(), ["gw>netmon:vpn", "m>gw"]);
+  assert.equal(els.find((e) => e.data.id === "gw").data.parent, "net:lan");
 });

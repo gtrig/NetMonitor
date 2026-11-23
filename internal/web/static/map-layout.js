@@ -2,7 +2,7 @@
 (function (root) {
   const MIN = 0.1, MAX = 300, TICKS = [0.1, 1, 10, 100];
   const R0 = 55, OUTER_GAP = 34, LABEL_PAD = 70, GROUP_GAP = 70;
-  const LANE = { left: 120, width: 900, strip: 80, row: 36, pad: 22, minGap: 74 };
+  const LANE = { left: 120, width: 900, strip: 80, row: 48, pad: 26, minGap: 74 };
   const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
   // frac places ms on a log scale from 0 (0.1 ms or less) to 1 (300 ms or more).
@@ -27,14 +27,39 @@
       else if (d.kind === "network") { d.network = d.label; d.id = fix(d.id); d.kind = "netmon"; d.label = "netmon"; }
       return { ...e, data: d };
     });
+    const gs = groups(out);
     const have = new Map(nodesOf(out).map((d) => [d.id, d]));
-    for (const g of groups(out)) {
+    for (const g of gs) {
       if (!g.centre.startsWith("netmon:") || have.has(g.centre)) continue;
       const data = { id: g.centre, kind: "netmon", label: "netmon", network: g.network };
       if (have.has("net:" + g.network)) data.parent = "net:" + g.network;
       out.push({ group: "nodes", data });
+      have.set(data.id, data);
     }
-    return out;
+    // Nodes live in the box of the group they are drawn in.
+    const of = new Map();
+    for (const g of gs) for (const id of [g.centre, ...g.nodes.map((d) => d.id)]) {
+      of.set(id, g);
+      if (have.has("net:" + g.network)) have.get(id).parent = "net:" + g.network;
+    }
+    // Lines to a network end at its centre.
+    const centre = new Map(gs.map((g) => ["net:" + g.network, g.centre]));
+    const done = out.filter((e) => {
+      if (e.group !== "edges") return true;
+      e.data.source = centre.get(e.data.source) ?? e.data.source;
+      e.data.target = centre.get(e.data.target) ?? e.data.target;
+      return e.data.source !== e.data.target;
+    });
+    // A gateway drawn in its own network stays linked to the other networks it is in.
+    for (const g of gs) {
+      for (const n of have.get(g.centre)?.networks || []) {
+        const other = gs.find((x) => x.network === n);
+        if (!other || other === g || done.some((e) => e.group === "edges" && e.data.kind !== "member" &&
+          ((e.data.source === g.centre && of.get(e.data.target) === other) || (e.data.target === g.centre && of.get(e.data.source) === other)))) continue;
+        done.push({ group: "edges", data: { id: `e:${g.centre}|${other.centre}`, source: g.centre, target: other.centre, kind: "member", label: "" } });
+      }
+    }
+    return done;
   }
 
   // groups splits the nodes by network, each around its router or a netmon marker.
@@ -92,7 +117,7 @@
         a += w;
       });
     } else {
-      nodes.forEach((d, i) => put(d, -Math.PI / 2 + i * GOLDEN));
+      nodes.forEach((d, i) => put(d, -Math.PI / 2 + i * (o.distance ? GOLDEN : (2 * Math.PI) / nodes.length)));
     }
     if (o.distance) {
       for (const t of TICKS) decor.push({ network: g.network, kind: "ring", x: 0, y: 0, r: R0 + frac(t) * (r1 - R0), label: t + " ms" });

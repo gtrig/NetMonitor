@@ -3,7 +3,7 @@
    below are only the primitives shared by Go templates and JS-rendered markup. */
 @import "tailwindcss" source(none);
 @source "../templates/*.html";
-@source "../static/{app,jobs,map,settings}.js";
+@source "../static/{app,jobs,map,map-layout,map-options,settings}.js";
 
 /* Semantic colors; map.js reads the same variables for the graph. */
 :root {

@@ -254,3 +254,18 @@ func TestAPIGraphIncludesRTT(t *testing.T) {
 		t.Fatalf("no time in %s", body)
 	}
 }
+
+func TestMapPageControls(t *testing.T) {
+	h, _, _ := newTest(t, nil)
+	body := do(h, "GET", "/map", "", false).Body.String()
+	for _, v := range []string{"radar", "sectors", "lanes"} {
+		if !strings.Contains(body, `<option value="`+v+`">`) {
+			t.Errorf("no layout %s", v)
+		}
+	}
+	for _, o := range []string{"names", "ips", "ms", "ports", "rings", "lines", "offline", "distance"} {
+		if !strings.Contains(body, `data-opt="`+o+`"`) {
+			t.Errorf("no option %s", o)
+		}
+	}
+}
