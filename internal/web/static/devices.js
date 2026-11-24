@@ -13,6 +13,11 @@
   const applyColumns = () => {
     heads.forEach((th, i) => {
       const hide = "optional" in th.dataset && prefs.hidden.includes(th.dataset.col);
+      // The actions header holds the column menu, so only the buttons below it are hidden.
+      if (th.dataset.col === "actions") {
+        for (const r of rows()) r.cells[i].firstElementChild.hidden = hide;
+        return;
+      }
       th.hidden = hide;
       for (const r of rows()) r.cells[i].hidden = hide;
     });
@@ -33,11 +38,14 @@
       applyColumns();
     });
     label.append(box, th.dataset.label);
-    menu.querySelector("[data-items]").append(label);
+    menu.append(label);
   }
-  document.addEventListener("click", (e) => { if (!menu.contains(e.target)) menu.open = false; });
-  menu.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); }
+  // A popover, because the table's scroll area would clip it; closing is up to the browser.
+  menu.addEventListener("toggle", (e) => {
+    if (e.newState !== "open") return;
+    const at = document.getElementById("columnsBtn").getBoundingClientRect();
+    menu.style.top = at.bottom + 4 + "px";
+    menu.style.right = Math.max(8, document.documentElement.clientWidth - at.right) + "px";
   });
 
   // Sorting.
@@ -124,7 +132,7 @@
     await api("POST", "/api/details/scan", refOf(row));
     const b = row.querySelector(".scan-details");
     b.disabled = true;
-    b.textContent = "Queued…";
+    b.title = "Queued for a detailed scan";
   };
   const split = (row) => api("POST", "/api/machines/split", refOf(row));
   const forget = async (row) => {

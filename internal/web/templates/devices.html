@@ -9,7 +9,6 @@
     <input class="control" type="search" id="q" placeholder="Filter by name, IP, MAC, vendor…" aria-label="Filter devices">
     <label class="check-label"><input type="checkbox" id="onlyUnknown"> unreviewed only</label>
   </form>
-  <details id="columns" class="menu"><summary class="btn">Columns</summary><div data-items role="group" aria-label="Shown columns"></div></details>
 </div>
 <div class="table-wrap sm:min-h-0 sm:overflow-y-auto">
 <table id="devices" class="data-table">
@@ -26,7 +25,7 @@
     <th data-col="sources" data-label="Sources" data-type="text" data-optional><button class="sort" type="button">Sources</button></th>
     <th data-col="services" data-label="Services" data-type="num" data-optional><button class="sort" type="button">Services</button></th>
     <th data-col="known" data-label="Known" data-type="num" data-optional><button class="sort" type="button">Known</button></th>
-    <th data-col="actions" data-label="Actions" data-optional><span class="sr-only">Actions</span></th>
+    <th data-col="actions" data-label="Actions" data-optional class="col-actions"><span class="sr-only">Actions</span><button id="columnsBtn" class="icon-btn" type="button" popovertarget="columns" aria-label="Choose columns" title="Choose columns"><svg><use href="#i-columns"/></svg></button></th>
   </tr></thead>
   <tbody>
   {{range .Devices}}
@@ -46,8 +45,7 @@
       {{if .Details.Ports}}<table class="mini-table"><tbody>{{range .Details.Ports}}<tr><td class="mono">{{.Port}}/{{.Proto}}</td><td>{{.Service}}</td><td>{{.Product}} {{.Version}}{{if .Extra}} <span class="text-muted">({{.Extra}})</span>{{end}}</td></tr>{{end}}</tbody></table>{{end}}
       <div class="text-muted">scanned {{ago .Details.ScannedAt}}</div></details>{{end}}</td>
     <td><input type="checkbox" class="known block" autocomplete="off" {{if .Known}}checked{{end}} aria-label="Mark as known"></td>
-    <td><div class="flex gap-1"><button class="btn btn-sm scan-details" type="button" title="Scan open ports, services and OS of this device now">{{if .Details}}Rescan{{else}}Scan{{end}}</button>
-      {{if $.CanEdit}}{{if .Machine}}<button class="btn btn-sm split" type="button" title="Remove this row from its machine">Split</button>{{end}}<button class="btn btn-sm btn-danger forget" type="button" title="Remove this device; it comes back if seen again">Forget</button>{{end}}</div></td>
+    <td class="col-actions"><div>{{if and $.CanEdit .Machine}}<button class="icon-btn split" data-tone="split" type="button" aria-label="Split from machine" title="Split: remove this row from its machine"><svg><use href="#i-split"/></svg></button>{{end}}<button class="icon-btn scan-details" data-tone="scan" type="button" aria-label="{{if .Details}}Rescan details{{else}}Scan details{{end}}" title="{{if .Details}}Rescan{{else}}Scan{{end}} open ports, services and OS of this device now"><svg><use href="#i-scan"/></svg></button>{{if $.CanEdit}}<button class="icon-btn forget" data-tone="forget" type="button" aria-label="Forget device" title="Forget: remove this device; it comes back if seen again"><svg><use href="#i-forget"/></svg></button>{{end}}</div></td>
   </tr>
   {{else}}
   <tr><td colspan="13" class="text-muted">No devices yet.</td></tr>
@@ -55,6 +53,13 @@
   </tbody>
 </table>
 </div>
+<div id="columns" class="menu" popover role="group" aria-label="Shown columns"></div>
+<svg class="hidden" aria-hidden="true">
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><path d="M12 21v-8L5 6M12 13l7-7M5 11V6h5M14 6h5v5"/></symbol>
+  <symbol id="i-forget" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
+</svg>
 <div id="bulk" class="bulk-bar" role="group" aria-label="Actions on the selected devices" hidden>
   <strong id="bulkCount" class="mr-2 tabular-nums" aria-live="polite"></strong>
   <button class="btn btn-sm" type="button" data-bulk="known">Mark known</button>

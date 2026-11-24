@@ -41,7 +41,10 @@
 
 /* stripe-<color>: colored bar on the left edge of a row. */
 @utility stripe-* {
-  box-shadow: inset 3px 0 --value(--color-*);
+  /* Not an inset shadow: that bleeds along the bottom at fractional row heights. */
+  background-image: linear-gradient(--value(--color-*) 0 100%);
+  background-size: 3px 100%;
+  background-repeat: no-repeat;
 }
 
 @layer base {
@@ -79,11 +82,22 @@
   [aria-sort="ascending"] > .sort, [aria-sort="descending"] > .sort { @apply text-fg; }
   [aria-sort="ascending"] > .sort::after { content: "↑"; opacity: 1; }
   [aria-sort="descending"] > .sort::after { content: "↓"; opacity: 1; }
-  .menu { @apply relative; }
-  .menu > summary { @apply list-none; }
-  .menu > summary::-webkit-details-marker { display: none; }
-  .menu > div { @apply absolute top-full left-0 z-4 mt-1 grid max-h-[60dvh] min-w-40 overflow-y-auto rounded-lg border bg-surface p-1.5 shadow-lg; }
+  .menu { @apply fixed inset-auto m-0 max-h-[70dvh] min-w-40 overflow-y-auto rounded-lg border bg-surface p-1.5 text-fg shadow-lg; }
   .menu-item { @apply flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-page; }
+  .icon-btn { @apply inline-grid size-7 cursor-pointer place-items-center rounded-md text-muted hover:bg-line hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:cursor-default; }
+  .icon-btn[data-tone] { color: var(--tone); }
+  .icon-btn[data-tone]:hover:not(:disabled) { background: color-mix(in srgb, var(--tone) 18%, transparent); }
+  .icon-btn[data-tone="scan"] { --tone: var(--accent); }
+  .icon-btn[data-tone="split"] { --tone: var(--router); }
+  .icon-btn[data-tone="forget"] { --tone: var(--bad); }
+  .icon-btn[data-tone]:disabled { --tone: var(--warn); } /* queued */
+  .icon-btn > svg { @apply pointer-events-none size-4; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  /* Stays in view when the table scrolls sideways. */
+  #devices > * > tr > .col-actions { @apply py-0 sticky -right-px text-right; }
+  #devices > thead > tr > .col-actions { @apply z-2; }
+  #devices > tbody > tr > .col-actions { @apply bg-surface; }
+  #devices > tbody > tr:hover:not([data-selected]) > .col-actions { @apply bg-page; }
+  #devices > tbody > tr[data-selected] > .col-actions { @apply bg-[color-mix(in_srgb,var(--accent)_12%,var(--surface))]; }
   .bulk-bar { @apply sticky bottom-4 z-2 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-accent bg-surface px-4 py-2.5 shadow-lg; }
   .mini-table { @apply my-1 w-full text-xs; }
   .mini-table > tbody > tr > td { @apply border-b py-px pr-1.5; }
