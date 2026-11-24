@@ -93,6 +93,7 @@
     document.getElementById("bulkCount").textContent = `${sel.length} selected`;
     for (const b of bar.querySelectorAll("button")) {
       b.disabled = busy || (b.dataset.bulk === "merge" && sel.length < 2) ||
+        (b.dataset.bulk === "wake" && !sel.some((r) => r.querySelector(".wake"))) ||
         (b.dataset.bulk === "split" && !sel.some((r) => r.dataset.machine));
     }
   };
@@ -134,6 +135,7 @@
     b.disabled = true;
     b.title = "Queued for a detailed scan";
   };
+  const wake = (row) => api("POST", "/api/devices/wake", refOf(row));
   const split = (row) => api("POST", "/api/machines/split", refOf(row));
   const forget = async (row) => {
     const { network, key } = refOf(row);
@@ -168,6 +170,9 @@
       if (c.contains("scan-details")) {
         await scan(row);
         toast("Detailed scan queued; see the Jobs page for progress. Reload when it is done.");
+      } else if (c.contains("wake")) {
+        await wake(row);
+        toast("Wake packet sent");
       } else if (c.contains("split")) {
         await split(row);
         location.reload();
@@ -198,6 +203,7 @@
     known: (l) => each(l, (r) => setKnown(r, true), (n) => `${devices(n)} marked as known`),
     unknown: (l) => each(l, (r) => setKnown(r, false), (n) => `${devices(n)} marked as unreviewed`),
     scan: (l) => each(l, scan, (n) => `${devices(n)} queued for a detailed scan`),
+    wake: (l) => each(l.filter((r) => r.querySelector(".wake")), wake, (n) => `Wake packet sent to ${devices(n)}`),
     async merge(l) { await api("POST", "/api/machines", { members: l.map(refOf) }); location.reload(); },
     async split(l) {
       if (await each(l.filter((r) => r.dataset.machine), split, (n) => `${devices(n)} split`)) location.reload();

@@ -75,6 +75,9 @@ if (devicePage) {
           } catch { /* try again */ }
           if (Date.now() > until) { clearInterval(poll); b.disabled = false; b.textContent = "Scan again"; toast("No result yet; check the Jobs page"); }
         }, 4000);
+      } else if (b.classList.contains("wake")) {
+        await api("POST", "/api/devices/wake", ref);
+        toast("Wake packet sent");
       } else if (b.classList.contains("split-off")) {
         await api("POST", "/api/machines/split", ref);
         location.reload();

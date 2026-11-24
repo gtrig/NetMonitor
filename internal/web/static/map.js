@@ -434,6 +434,9 @@
     try {
       if (b.dataset.act === "copy") {
         await copyText(b.dataset.ip); toast("Copied " + b.dataset.ip);
+      } else if (b.dataset.act === "wake") {
+        await api("POST", "/api/devices/wake", ref);
+        toast("Wake packet sent");
       } else if (b.dataset.act === "forget") {
         if (!confirm(`Forget ${ref.key} in ${ref.network}? It comes back if a scan sees it again.`)) return;
         await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));
@@ -470,14 +473,16 @@
     } else {
       const members = d.members || [];
       const ref = (m) => `data-network="${esc(m.network)}" data-key="${esc(m.key)}"`;
+      const wakeBtn = (m) => m.mac ? `<button class="btn btn-sm" type="button" data-act="wake" ${ref(m)} title="Send a Wake-on-LAN packet to ${esc(m.mac)}">Wake</button>` : "";
       const memberList = members.length > 1 ? `<h3 class="sub">Addresses</h3><table class="mini-table"><tbody>${members.map((m) =>
         `<tr><td>${esc(m.network)}</td><td class="mono">${esc(m.ip)}</td><td class="mono text-xs">${esc(m.mac)}</td><td><span class="pill ${m.online ? "bg-ok" : ""}"></span></td></tr>
-        ${canEdit ? `<tr><td class="space-x-1 pb-1" colspan="4">${d.machine ? `<button class="btn btn-sm" type="button" data-act="split" ${ref(m)} title="Remove this address from the machine">Split</button>` : ""}
-          <button class="btn btn-sm btn-danger" type="button" data-act="forget" ${ref(m)} title="Remove this address; it comes back if seen again">Forget</button></td></tr>` : ""}`).join("")}</tbody></table>` : "";
+        ${canEdit || m.mac ? `<tr><td class="space-x-1 pb-1" colspan="4">${wakeBtn(m)}${!canEdit ? "" : `${d.machine ? `<button class="btn btn-sm" type="button" data-act="split" ${ref(m)} title="Remove this address from the machine">Split</button>` : ""}
+          <button class="btn btn-sm btn-danger" type="button" data-act="forget" ${ref(m)} title="Remove this address; it comes back if seen again">Forget</button>`}</td></tr>` : ""}`).join("")}</tbody></table>` : "";
       const ip = ipsOf(d)[0] || "";
       const actions = `<h3 class="sub">Actions</h3><div class="mt-2 mb-1 flex flex-wrap gap-1.5"><span class="open-links contents">${openLinks(webLinks([], ipsOf(d)))}</span>
         ${ip ? `<button class="btn btn-sm" type="button" data-act="copy" data-ip="${esc(ip)}">Copy IP</button>
         ${ext("/devices?q=" + encodeURIComponent(ip), "View in Devices")}` : ""}
+        ${members.length <= 1 ? wakeBtn(members[0] || d) : ""}
         ${canEdit && members.length <= 1 ? `<button class="btn btn-sm btn-danger" type="button" data-act="forget" ${ref(members[0] || { network: d.network, key: d.key })}>Forget</button>` : ""}</div>`;
       panel.innerHTML = `<button class="btn btn-sm close float-right">×</button>
         <h2>${esc(d.label)}</h2>${actions}

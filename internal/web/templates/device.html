@@ -9,6 +9,7 @@
 <div class="flex flex-wrap items-center gap-2 mb-4">
   {{range .Links}}<a class="btn btn-sm" href="{{.}}" target="_blank" rel="noopener noreferrer">Open {{.}} ↗</a>{{end}}
   <button class="btn btn-sm scan-details" type="button">{{if .Details}}Rescan details{{else}}Scan details now{{end}}</button>
+  {{if .MAC}}<button class="btn btn-sm wake" type="button" title="Send a Wake-on-LAN packet to {{.MAC}}">Wake</button>{{end}}
   {{if $.CanEdit}}{{if .Machine}}<button class="btn btn-sm split-off" type="button" title="Remove this address from its machine">Split from machine</button>{{end}}
   <button class="btn btn-sm btn-danger forget" type="button" title="Remove this device; it comes back if seen again">Forget</button>{{end}}
 </div>

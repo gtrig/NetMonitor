@@ -88,6 +88,7 @@
   .icon-btn[data-tone] { color: var(--tone); }
   .icon-btn[data-tone]:hover:not(:disabled) { background: color-mix(in srgb, var(--tone) 18%, transparent); }
   .icon-btn[data-tone="scan"] { --tone: var(--accent); }
+  .icon-btn[data-tone="wake"] { --tone: var(--ok); }
   .icon-btn[data-tone="split"] { --tone: var(--router); }
   .icon-btn[data-tone="forget"] { --tone: var(--bad); }
   .icon-btn[data-tone]:disabled { --tone: var(--warn); } /* queued */

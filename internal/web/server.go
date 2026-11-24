@@ -62,6 +62,8 @@ type Deps struct {
 	Store    *store.Store
 	Runtime  func() Runtime
 	Settings Settings
+	// Wake sends a Wake-on-LAN packet for mac on network (nil: wol.Send).
+	Wake func(mac string, network netip.Prefix) error
 }
 
 type server struct {
@@ -122,6 +124,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/events", s.apiEvents)
 	mux.HandleFunc("PATCH /api/devices/{key}", s.apiPatchDevice)
 	mux.HandleFunc("DELETE /api/devices/{key}", s.apiDeleteDevice)
+	mux.HandleFunc("POST /api/devices/wake", s.apiWake)
 	mux.HandleFunc("POST /api/machines", s.apiMergeMachine)
 	mux.HandleFunc("POST /api/machines/split", s.apiSplitMachine)
 	mux.HandleFunc("GET /api/data/networks", s.apiDataNetworks)

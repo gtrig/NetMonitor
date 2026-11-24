@@ -60,6 +60,12 @@ The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_G
 - **Detailed** (`services` source, one per network, default every `6h`) runs `nmap -sV -O` on the top 1000 TCP ports of each host that is currently online, one queue entry per device, and keeps the latest result per device: open ports, service product/version, OS guess. It is inventory only: it never marks devices online/offline and never sends alerts. Expect it to be slow (about 15 minutes for 25 home/IoT devices). Extra nmap args are allowed, e.g. `-p 1-65535` or `--version-light`; NSE scripts (`--script`, `-sC`, `-A`), other target lists (`-i…`) and output files (`-o…`) are rejected. **Scan now** on a network refreshes presence only.
 - Results show in the **Services** column on the Devices page and in the device panel on the map. **Scan details** / **Rescan** puts one device at the front of the queue (also in networks without a services source); it shows on the Jobs page until it is done.
 
+## Wake on LAN
+
+**Wake** on the Devices page (one row or all selected ones), a device's page or the map panel broadcasts a Wake-on-LAN packet from netmon on the device's network (UDP port 9). It needs the device's MAC address, and Wake on LAN enabled on the device itself. The packet has no reply: the next scan shows whether the device woke up.
+
+Networks the netmon host is not attached to only work if their router forwards directed broadcasts, which most block by default. `cidr` must match the real subnet, since the packet goes to its broadcast address.
+
 ## Configuration
 
 Everything lives in `config/config.yaml`; `${VAR}` references are filled from the environment (`.env`). See [config/config.example.yaml](config/config.example.yaml) for a complete example.
