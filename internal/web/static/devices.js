@@ -171,8 +171,8 @@
         await scan(row);
         toast("Detailed scan queued; see the Jobs page for progress. Reload when it is done.");
       } else if (c.contains("wake")) {
-        await wake(row);
-        toast("Wake packet sent");
+        const { via } = await wake(row);
+        toast("Wake packet sent via " + via);
       } else if (c.contains("split")) {
         await split(row);
         location.reload();

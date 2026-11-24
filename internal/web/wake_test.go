@@ -23,15 +23,24 @@ func TestWake(t *testing.T) {
 		{Key: "mac:aa:00:00:00:00:01", Network: "lan", MAC: "aa:00:00:00:00:01"},
 		{Key: "ip:10.0.0.9", Network: "lan", IP: netip.MustParseAddr("10.0.0.9")},
 		{Key: "mac:aa:00:00:00:00:02", Network: "gone", MAC: "aa:00:00:00:00:02"},
+		{Key: "mac:aa:00:00:00:00:03", Network: "far", MAC: "aa:00:00:00:00:03"},
 	})
-	cfg := &config.Config{Networks: []config.Network{{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")}}}
+	cfg := &config.Config{Routers: []config.Router{{Name: "core"}}, Networks: []config.Network{
+		{Name: "lan", CIDR: netip.MustParsePrefix("10.0.0.0/24")},
+		{Name: "far", CIDR: netip.MustParsePrefix("10.9.0.0/24")},
+	}}
 	var sent []string
 	var sendErr error
 	h := New(Deps{Store: st, Runtime: func() Runtime {
-		return Runtime{Scheduler: &fakeSched{}, Notifier: fakeNotifier{}, Config: cfg}
+		return Runtime{Scheduler: &fakeSched{}, Notifier: fakeNotifier{}, Config: cfg,
+			Gateways: map[string]string{"far": "core"}}
 	}, Settings: &fakeSettings{raw: &config.Config{}},
-		Wake: func(mac string, network netip.Prefix) error {
-			sent = append(sent, mac+" "+network.String())
+		Wake: func(_ context.Context, router *config.Router, mac string, network netip.Prefix) error {
+			via := "netmon"
+			if router != nil {
+				via = router.Name
+			}
+			sent = append(sent, via+" "+mac+" "+network.String())
 			return sendErr
 		}})
 
@@ -53,8 +62,12 @@ func TestWake(t *testing.T) {
 	if len(sent) != 0 {
 		t.Fatalf("sent %v", sent)
 	}
-	if rr := do(h, "POST", "/api/devices/wake", ok, false); rr.Code != 202 || len(sent) != 1 || sent[0] != "aa:00:00:00:00:01 10.0.0.0/24" {
+	if rr := do(h, "POST", "/api/devices/wake", ok, false); rr.Code != 200 || len(sent) != 1 || sent[0] != "netmon aa:00:00:00:00:01 10.0.0.0/24" {
 		t.Fatalf("%d %s, sent %v", rr.Code, rr.Body, sent)
+	}
+	rr := do(h, "POST", "/api/devices/wake", `{"network":"far","key":"mac:aa:00:00:00:00:03"}`, false)
+	if rr.Code != 200 || strings.TrimSpace(rr.Body.String()) != `{"via":"core"}` || len(sent) != 2 || sent[1] != "core aa:00:00:00:00:03 10.9.0.0/24" {
+		t.Fatalf("router: %d %s, sent %v", rr.Code, rr.Body, sent)
 	}
 	sendErr = errors.New("network is unreachable")
 	if rr := do(h, "POST", "/api/devices/wake", ok, false); rr.Code != 502 || !strings.Contains(rr.Body.String(), "unreachable") {

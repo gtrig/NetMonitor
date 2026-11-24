@@ -62,9 +62,10 @@ The container runs as the host user that owns `./config` (`NETMON_UID`/`NETMON_G
 
 ## Wake on LAN
 
-**Wake** on the Devices page (one row or all selected ones), a device's page or the map panel broadcasts a Wake-on-LAN packet from netmon on the device's network (UDP port 9). It needs the device's MAC address, and Wake on LAN enabled on the device itself. The packet has no reply: the next scan shows whether the device woke up.
+**Wake** on the Devices page (one row or all selected ones), a device's page or the map panel sends a Wake-on-LAN packet. It needs the device's MAC address, and Wake on LAN enabled on the device itself. The packet has no reply: the next scan shows whether the device woke up.
 
-Networks the netmon host is not attached to only work if their router forwards directed broadcasts, which most block by default. `cidr` must match the real subnet, since the packet goes to its broadcast address.
+- **Networks with a `router` source**: that MikroTik router (the first one listed) sends it with `/tool wol`, on its interface in the network's `cidr`, so networks behind a VPN work too. Its user needs the `test` policy. If the router fails, the error is shown and nothing else is tried.
+- **Other networks**: netmon broadcasts it itself (UDP port 9). That only works on networks the netmon host is attached to, and `cidr` must match the real subnet.
 
 ## Configuration
 
@@ -80,13 +81,15 @@ Environment overrides: `NETMON_CONFIG` (config path), `NETMON_LISTEN`, `NETMON_D
 
 ## MikroTik setup
 
-Create a read-only API user and enable the API (TLS recommended):
+Create an API user without write access and enable the API (TLS recommended):
 
 ```
-/user group add name=netmon policy=read,api,!write,!policy,!sensitive,!test,!ftp,!ssh,!telnet,!winbox,!web,!reboot,!password,!sniff,!romon,!rest-api
+/user group add name=netmon policy=read,api,test,!write,!policy,!sensitive,!ftp,!ssh,!telnet,!winbox,!web,!reboot,!password,!sniff,!romon,!rest-api
 /user add name=netmon-ro group=netmon password=CHANGE-ME
 /ip service set api-ssl disabled=no address=<monitor-ip>/32
 ```
+
+`test` lets netmon ping from the router and send Wake-on-LAN packets; use `!test` if you want neither.
 
 Use port `8729` with `tls: true` (add `insecure_skip_verify: true` for the default self-signed certificate) or `8728` with `tls: false`. Add one `routers:` entry per MikroTik. Neighbor discovery (`/ip neighbor discovery-settings`) gives you the link between your two routers on the map.
 

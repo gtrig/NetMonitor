@@ -435,8 +435,8 @@
       if (b.dataset.act === "copy") {
         await copyText(b.dataset.ip); toast("Copied " + b.dataset.ip);
       } else if (b.dataset.act === "wake") {
-        await api("POST", "/api/devices/wake", ref);
-        toast("Wake packet sent");
+        const { via } = await api("POST", "/api/devices/wake", ref);
+        toast("Wake packet sent via " + via);
       } else if (b.dataset.act === "forget") {
         if (!confirm(`Forget ${ref.key} in ${ref.network}? It comes back if a scan sees it again.`)) return;
         await api("DELETE", "/api/devices/" + encodeURIComponent(ref.key) + "?network=" + encodeURIComponent(ref.network));

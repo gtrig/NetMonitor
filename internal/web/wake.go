@@ -1,12 +1,15 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/netip"
 	"slices"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
+	"github.com/gtrig/netmon/internal/source/mikrotik"
 	"github.com/gtrig/netmon/internal/wol"
 )
 
@@ -33,19 +36,36 @@ func (s *server) apiWake(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the device's MAC address is not known", http.StatusConflict)
 		return
 	}
-	nets := s.rt().Config.Networks
+	rt := s.rt()
+	nets := rt.Config.Networks
 	n := slices.IndexFunc(nets, func(n config.Network) bool { return n.Name == ref.Network })
 	if n < 0 {
 		http.Error(w, "network is not configured", http.StatusConflict)
 		return
 	}
+	var router *config.Router
+	via := "netmon"
+	if gw := rt.Gateways[ref.Network]; gw != "" {
+		if j := slices.IndexFunc(rt.Config.Routers, func(r config.Router) bool { return r.Name == gw }); j >= 0 {
+			router, via = &rt.Config.Routers[j], gw
+		}
+	}
 	send := s.Wake
 	if send == nil {
-		send = wol.Send
+		send = sendWake
 	}
-	if err := send(devs[i].MAC, nets[n].CIDR); err != nil {
+	if err := send(r.Context(), router, devs[i].MAC, nets[n].CIDR); err != nil {
 		http.Error(w, "wake packet not sent: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, map[string]string{"via": via})
+}
+
+// sendWake has the network's router send the packet, or broadcasts it from netmon when there is
+// none. A failing router is not worked around: a broadcast from afar would be lost silently.
+func sendWake(ctx context.Context, router *config.Router, mac string, network netip.Prefix) error {
+	if router == nil {
+		return wol.Send(mac, network)
+	}
+	return mikrotik.Wake(ctx, *router, mac, network)
 }

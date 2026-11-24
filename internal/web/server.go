@@ -62,8 +62,9 @@ type Deps struct {
 	Store    *store.Store
 	Runtime  func() Runtime
 	Settings Settings
-	// Wake sends a Wake-on-LAN packet for mac on network (nil: wol.Send).
-	Wake func(mac string, network netip.Prefix) error
+	// Wake sends a Wake-on-LAN packet for mac on network, through router unless it is nil
+	// (nil: sendWake).
+	Wake func(ctx context.Context, router *config.Router, mac string, network netip.Prefix) error
 }
 
 type server struct {
