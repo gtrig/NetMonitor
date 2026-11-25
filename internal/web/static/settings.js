@@ -75,6 +75,7 @@
     state.workers = data.workers || {};
     state.debug = data.debug || {};
     state.debug.allow = state.debug.allow || [];
+    state.debug.proxies = state.debug.proxies || [];
     for (const n of state.networks) { n.sources = n.sources || []; n.exclude = n.exclude || []; }
     open.clear();
     for (const k of KINDS) {
@@ -249,15 +250,18 @@
       ${check("debug.enabled", "Enabled", state.debug.enabled)}
       <div class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-3.5 gap-y-2.5">
         ${text("debug.allow", "Allowed networks", state.debug.allow.join(", "), { ph: "only this machine" })}
-        ${text("debug.listen", "Listen address", state.debug.listen, { ph: "automatic, port 8099" })}
+        ${state.debug.web_port ? text("debug.proxies", "Trusted proxies", state.debug.proxies.join(", "), { ph: "none" })
+          : text("debug.listen", "Listen address", state.debug.listen, { ph: "automatic, port 8099" })}
       </div>
-      <p class="mt-2 max-w-[75ch] text-xs text-muted">Networks or addresses, comma separated. Once you list any, only those can connect: add 127.0.0.0/8 to keep this machine. Clients also need the token. Traffic is not encrypted, so allow only networks you trust.</p>
+      ${check("debug.web_port", "Use the web UI's address (/mcp), for example behind a reverse proxy", state.debug.web_port)}
+      <p class="mt-2 max-w-[75ch] text-xs text-muted">Networks or addresses, comma separated. Once you list any, only those can connect: add 127.0.0.0/8 to keep this machine. Clients also need the token. Without HTTPS the traffic is not encrypted, so allow only networks you trust.${state.debug.web_port ? " Behind a reverse proxy, list the address it connects to netmon from under Trusted proxies; it must send X-Forwarded-For. Requests through other proxies are refused, and the log shows their address." : ""}</p>
       <div class="mt-3 border-t pt-3" id="debug-status"></div></div>`;
     renderDebugStatus();
   }
 
   // The address clients reach the server at.
   function debugURL() {
+    if (dbg.web_port) return location.origin + "/mcp";
     const port = dbg.addr.slice(dbg.addr.lastIndexOf(":") + 1);
     const host = dbg.addr.slice(0, dbg.addr.lastIndexOf(":"));
     return `http://${["", "0.0.0.0", "[::]"].includes(host) ? location.hostname : host}:${port}/mcp`;
@@ -329,7 +333,7 @@
     }
   }
 
-  const listFields = /\.(exclude|to|allow)$/;
+  const listFields = /\.(exclude|to|allow|proxies)$/;
   const numFields = /\.(port|smtp_port|scans|detailed)$/;
   // Re-render after focus has moved (e.g. Tab), then put focus back on the same field.
   function renderKeepingFocus(kinds) {
@@ -355,7 +359,7 @@
     if (!path) return;
     let v = el.type === "checkbox" ? el.checked : el.value.trim();
     if (listFields.test(path)) v = v ? v.split(",").map((x) => x.trim()).filter(Boolean) : [];
-    if (path === "debug.allow") { v = v.map(asNetwork); el.value = v.join(", "); }
+    if (path === "debug.allow" || path === "debug.proxies") { v = v.map(asNetwork); el.value = v.join(", "); }
     else if (path.endsWith(".args")) v = v ? v.split(/\s+/) : [];
     else if (numFields.test(path)) v = v ? Number(v) : 0;
     else if ("secret" in el.dataset && v === "") v = getPath(path) === MASKED ? MASKED : getPath(path) || "";
@@ -373,6 +377,7 @@
     const [kind, i] = path.split(".");
     refreshSummary(kind, i);
     refreshChrome();
+    if (path === "debug.web_port") { renderKeepingFocus(["debug"]); return; }
     if (el.dataset.restructure !== undefined) renderKeepingFocus([kind]);
     else if (path.endsWith(".name")) renderKeepingFocus(dependents[kind]);
   });

@@ -120,6 +120,45 @@ func TestGuard(t *testing.T) {
 	check("127.0.0.1:5", 403)
 }
 
+func TestProxies(t *testing.T) {
+	e := setup(t)
+	e.cfg.Debug = config.Debug{Allow: []netip.Prefix{netip.MustParsePrefix("192.168.8.0/24"), netip.MustParsePrefix("172.18.0.0/16")},
+		Proxies: []netip.Prefix{netip.MustParsePrefix("172.18.0.2/32"), netip.MustParsePrefix("10.0.0.2/32")}}
+	for _, c := range []struct {
+		from string
+		want int
+		xff  []string
+	}{
+		{"172.18.0.2:5", 200, []string{"192.168.8.154"}},
+		{"172.18.0.2:5", 200, []string{"8.8.8.8, 192.168.8.154, 10.0.0.2"}},
+		{"172.18.0.2:5", 200, []string{"8.8.8.8", "192.168.8.154"}},
+		{"172.18.0.2:5", 403, []string{"192.168.8.154, 8.8.8.8"}}, // the client's own claim
+		{"172.18.0.2:5", 403, []string{"192.168.8.154", "8.8.8.8"}},
+		{"172.18.0.2:5", 403, []string{"192.168.8.154, junk"}},
+		{"172.18.0.2:5", 403, []string{"10.0.0.2"}},
+		{"172.18.0.2:5", 403, nil},                       // the proxy itself is allowed, its clients are not
+		{"172.18.0.9:5", 403, []string{"192.168.8.154"}}, // another proxy
+		{"172.18.0.9:5", 200, nil},
+	} {
+		r := httptest.NewRequest("POST", Path, strings.NewReader(pingReq))
+		r.RemoteAddr = c.from
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		for _, x := range c.xff {
+			r.Header.Add("X-Forwarded-For", x)
+		}
+		w := httptest.NewRecorder()
+		e.h.ServeHTTP(w, r)
+		if w.Code != c.want {
+			t.Errorf("%s %q: %d, want %d", c.from, c.xff, w.Code, c.want)
+		}
+	}
+	for _, h := range []string{"X-Real-IP", "Forwarded", "Via", "X-Forwarded-Proto"} {
+		if w := e.post("172.18.0.9:5", pingReq, h, "x"); w.Code != 403 {
+			t.Error("unknown proxy with", h, w.Code)
+		}
+	}
+}
+
 func TestProtocol(t *testing.T) {
 	e := setup(t)
 	for body, want := range map[string]string{
@@ -301,6 +340,17 @@ func TestManager(t *testing.T) {
 	if m.Status().Running || ask(addr, token) != 0 {
 		t.Error("still running")
 	}
+	m.Apply(on)
+	addr = m.Status().Addr
+	m.Apply(config.Debug{Enabled: true, WebPort: true})
+	if st := m.Status(); !st.Running || !st.WebPort || m.Handler() == nil || ask(addr, token) != 0 {
+		t.Error("did not move to the web port", st)
+	}
+	m.Apply(on)
+	if st := m.Status(); !st.Running || st.WebPort || m.Handler() != nil || ask(st.Addr, token) != 200 {
+		t.Error("did not move back", st)
+	}
+	m.Apply(config.Debug{})
 	forced := NewManager(Options{Forced: true, Token: testToken}, m.deps)
 	t.Cleanup(forced.Close)
 	forced.Apply(config.Debug{Listen: "127.0.0.1:0"})

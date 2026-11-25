@@ -157,7 +157,19 @@ Without the `claude` command, put this in `.mcp.json` in the project's folder (g
 {"mcpServers": {"netmon": {"type": "http", "url": "http://127.0.0.1:8099/mcp", "headers": {"Authorization": "Bearer TOKEN"}}}}
 ```
 
-Configured secrets are masked in all answers. Traffic is plain HTTP, so anyone who can read it on the way sees the token and the answers: allow only networks you trust, or use a VPN or SSH tunnel. netmon checks the address a connection comes from; behind a proxy that is the proxy's. With Docker bridge networking it can be the bridge's (compose uses host networking).
+Configured secrets are masked in all answers. Traffic is plain HTTP, so anyone who can read it on the way sees the token and the answers: allow only networks you trust, or use a VPN or SSH tunnel.
+
+**Behind a reverse proxy**, serve it on the web UI's port instead, so that it answers at `https://your-host/mcp`, encrypted up to the proxy:
+
+```yaml
+debug:
+  enabled: true
+  web_port: true
+  proxies: [172.18.0.2/32]        # where the proxy's connections to netmon come from
+  allow: [192.168.8.0/24]         # the clients' own addresses
+```
+
+Only listed proxies are believed, through the `X-Forwarded-For` they send; they must add the client's address to it or replace it. Other requests that came through a proxy are refused, and the log shows the address to add (`docker logs netmon`). A proxy that adds no forwarding header at all cannot be recognized: its clients would look like the proxy, so never put its address in `allow`. The proxy must pass the `Authorization` header on and not ask for a login of its own at `/mcp`. With Docker bridge networking, published ports can make all clients look like the bridge's address; a proxy in the same Docker network, or host networking, avoids that.
 
 ## Development
 

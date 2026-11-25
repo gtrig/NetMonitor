@@ -34,8 +34,9 @@ type Manager struct {
 	mu    sync.Mutex // serialises Apply, NewToken and Close
 	state sync.Mutex // guards the rest
 	srv   *http.Server
-	asked string // address srv was asked to listen on
-	addr  string // address it listens on
+	web   http.Handler // on the web UI's port instead of srv
+	asked string       // where it was asked to run
+	addr  string       // address srv listens on
 	err   error
 	token string
 }
@@ -43,6 +44,7 @@ type Manager struct {
 // Status is the state of the server.
 type Status struct {
 	Running    bool   `json:"running"`
+	WebPort    bool   `json:"web_port"` // on the web UI's port, without Addr
 	Addr       string `json:"addr,omitempty"`
 	Error      string `json:"error,omitempty"`
 	Forced     bool   `json:"forced"`
@@ -70,11 +72,26 @@ func (m *Manager) currentToken() string {
 func (m *Manager) Status() Status {
 	m.state.Lock()
 	defer m.state.Unlock()
-	st := Status{Running: m.srv != nil, Addr: m.addr, Forced: m.opts.Forced, TokenGiven: m.opts.Token != ""}
+	st := Status{Running: m.srv != nil || m.web != nil, WebPort: m.web != nil, Addr: m.addr, Forced: m.opts.Forced, TokenGiven: m.opts.Token != ""}
 	if m.err != nil {
 		st.Error = m.err.Error()
 	}
 	return st
+}
+
+// Handler returns the server if it runs on the web UI's port, else nil.
+func (m *Manager) Handler() http.Handler {
+	m.state.Lock()
+	defer m.state.Unlock()
+	return m.web
+}
+
+// place is where c asks the server to run.
+func place(c config.Debug) string {
+	if c.WebPort {
+		return "web port"
+	}
+	return c.Addr()
 }
 
 // Apply makes the server match c. A failure to start shows in Status; it does not stop netmon.
@@ -82,10 +99,10 @@ func (m *Manager) Apply(c config.Debug) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.state.Lock()
-	running, asked := m.srv != nil, m.asked
+	running, asked := m.srv != nil || m.web != nil, m.asked
 	m.state.Unlock()
 	on := c.Enabled || m.opts.Forced
-	if running && on && asked == c.Addr() {
+	if running && on && asked == place(c) {
 		return // the allowed networks are read per request
 	}
 	m.stop(nil)
@@ -104,6 +121,14 @@ func (m *Manager) start(c config.Debug) error {
 	if err != nil {
 		return err
 	}
+	if c.WebPort {
+		m.deps.Logs.Start()
+		m.state.Lock()
+		m.web, m.asked, m.err, m.token = New(m.deps), place(c), nil, token
+		m.state.Unlock()
+		slog.Warn("debug mode: MCP server on the web port", "path", Path, "allow", c.Networks(), "proxies", c.Proxies, "token", where)
+		return nil
+	}
 	ln, err := net.Listen("tcp", c.Addr())
 	if err != nil {
 		return err
@@ -111,7 +136,7 @@ func (m *Manager) start(c config.Debug) error {
 	m.deps.Logs.Start()
 	srv := &http.Server{Handler: New(m.deps), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second}
 	m.state.Lock()
-	m.srv, m.asked, m.addr, m.err, m.token = srv, c.Addr(), ln.Addr().String(), nil, token
+	m.srv, m.asked, m.addr, m.err, m.token = srv, place(c), ln.Addr().String(), nil, token
 	m.state.Unlock()
 	slog.Warn("debug mode: MCP server listening", "url", "http://"+ln.Addr().String()+Path, "allow", c.Networks(), "token", where)
 	go func() {
@@ -132,7 +157,7 @@ func (m *Manager) start(c config.Debug) error {
 func (m *Manager) stop(err error) {
 	m.state.Lock()
 	srv := m.srv
-	m.srv, m.addr, m.asked, m.err, m.token = nil, "", "", err, ""
+	m.srv, m.web, m.addr, m.asked, m.err, m.token = nil, nil, "", "", err, ""
 	m.state.Unlock()
 	if srv != nil {
 		srv.Close()

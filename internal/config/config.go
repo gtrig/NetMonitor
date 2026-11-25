@@ -58,6 +58,10 @@ type Debug struct {
 	// Listen is its address; empty means DebugPort on this machine, or on every address when Allow
 	// has networks other than this machine.
 	Listen string `yaml:"listen,omitempty" json:"listen"`
+	// WebPort serves it at the web UI's address instead of one of its own.
+	WebPort bool `yaml:"web_port,omitempty" json:"web_port"`
+	// Proxies are the reverse proxies believed about who connects through them.
+	Proxies []netip.Prefix `yaml:"proxies,omitempty" json:"proxies"`
 	// Allow are the networks that may connect; empty means only this machine.
 	Allow []netip.Prefix `yaml:"allow,omitempty" json:"allow"`
 }
@@ -77,8 +81,15 @@ func (d Debug) Networks() []netip.Prefix {
 
 // Allows reports whether addr may connect.
 func (d Debug) Allows(addr netip.Addr) bool {
+	return contains(d.Networks(), addr)
+}
+
+// IsProxy reports whether addr is a trusted proxy.
+func (d Debug) IsProxy(addr netip.Addr) bool { return contains(d.Proxies, addr) }
+
+func contains(nets []netip.Prefix, addr netip.Addr) bool {
 	addr = addr.Unmap().WithZone("")
-	return slices.ContainsFunc(d.Networks(), func(p netip.Prefix) bool { return p.Contains(addr) })
+	return slices.ContainsFunc(nets, func(p netip.Prefix) bool { return p.Contains(addr) })
 }
 
 // Addr is the address to listen on.
@@ -505,6 +516,11 @@ func (c *Config) Validate() error {
 	for _, p := range c.Debug.Allow {
 		if !p.IsValid() || p.Addr().Is4In6() {
 			bad("debug: allow needs networks such as 192.168.8.0/24")
+		}
+	}
+	for _, p := range c.Debug.Proxies {
+		if !p.IsValid() || p.Addr().Is4In6() {
+			bad("debug: proxies needs networks such as 172.18.0.2/32")
 		}
 	}
 	if c.Auth != nil && (c.Auth.Username == "" || c.Auth.Password == "") {

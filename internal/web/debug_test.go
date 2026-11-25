@@ -12,7 +12,12 @@ import (
 	"github.com/gtrig/netmon/internal/settings"
 )
 
-type fakeDebug struct{ err error }
+type fakeDebug struct {
+	err error
+	h   http.Handler
+}
+
+func (f *fakeDebug) Handler() http.Handler { return f.h }
 
 func (f *fakeDebug) Status() debug.Status      { return debug.Status{Running: true, Addr: "127.0.0.1:8099"} }
 func (f *fakeDebug) NewToken() (string, error) { return "fresh", f.err }
@@ -47,10 +52,27 @@ func TestDebugAPI(t *testing.T) {
 	}
 }
 
+func TestDebugOnWebPort(t *testing.T) {
+	f := &fakeDebug{}
+	h := debugHandler(creds, f)
+	if rr := do(h, "POST", debug.Path, "", false); rr.Code != 404 {
+		t.Error("off:", rr.Code)
+	}
+	f.h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	for _, m := range []string{"POST", "GET"} {
+		if rr := do(h, m, debug.Path, "", false); rr.Code != http.StatusTeapot {
+			t.Error(m, rr.Code)
+		}
+	}
+	if rr := do(h, "GET", "/api/devices", "", false); rr.Code != 401 {
+		t.Error("the rest lost its login:", rr.Code)
+	}
+}
+
 func TestDebugSettings(t *testing.T) {
 	h, fs := newSettingsTest(t, creds)
 	fs.raw.Debug = config.Debug{Enabled: true, Allow: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")}}
-	if rr := do(h, "GET", "/api/settings", "", true); !strings.Contains(rr.Body.String(), `"debug":{"enabled":true,"listen":"","allow":["10.0.0.0/24"]}`) {
+	if rr := do(h, "GET", "/api/settings", "", true); !strings.Contains(rr.Body.String(), `"debug":{"enabled":true,"listen":"","web_port":false,"proxies":[],"allow":["10.0.0.0/24"]}`) {
 		t.Error(rr.Body)
 	}
 	// Not sent: kept.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
@@ -86,17 +87,22 @@ func New(d Deps) http.Handler {
 // guard lets only allowed networks in, and of those only clients with the token.
 func (s *server) guard(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The peer's own address: X-Forwarded-For could be anything.
-		from, err := netip.ParseAddrPort(r.RemoteAddr)
-		if err != nil || !s.Runtime().Config.Debug.Allows(from.Addr()) { // read per request: changes on reload
-			slog.Warn("debug server: refused, not in debug.allow", "from", r.RemoteAddr)
+		cfg := s.Runtime().Config.Debug // read per request: changes on reload
+		from, err := client(r, cfg)
+		if err != nil {
+			slog.Warn("debug server: refused", "peer", r.RemoteAddr, "err", err)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if !cfg.Allows(from) {
+			slog.Warn("debug server: refused, not in debug.allow", "from", from, "peer", r.RemoteAddr)
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		token := s.Token()
 		if !ok || token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-			slog.Warn("debug server: refused, wrong or missing token", "from", r.RemoteAddr)
+			slog.Warn("debug server: refused, wrong or missing token", "from", from, "peer", r.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -107,6 +113,37 @@ func (s *server) guard(h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// client returns the address a request comes from. Proxies are believed only if configured, and a
+// request that came through another one is refused: allowing that proxy's address would let
+// everyone behind it in.
+func client(r *http.Request, cfg config.Debug) (netip.Addr, error) {
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return netip.Addr{}, errors.New("unknown address")
+	}
+	if !cfg.IsProxy(peer.Addr()) {
+		for _, h := range []string{"X-Forwarded-For", "X-Real-Ip", "Forwarded", "X-Forwarded-Host", "X-Forwarded-Proto", "Via"} {
+			if len(r.Header.Values(h)) > 0 {
+				return netip.Addr{}, errors.New("came through a proxy that is not in debug.proxies")
+			}
+		}
+		return peer.Addr(), nil
+	}
+	// Each proxy adds who it got the request from, so the last one that is not a proxy is the
+	// client; anything before that it could have made up.
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for _, h := range slices.Backward(hops) {
+		addr, err := netip.ParseAddr(strings.TrimSpace(h))
+		if err != nil {
+			return netip.Addr{}, errors.New("the proxy sends no usable X-Forwarded-For")
+		}
+		if !cfg.IsProxy(addr) {
+			return addr, nil
+		}
+	}
+	return netip.Addr{}, errors.New("X-Forwarded-For names only proxies")
 }
 
 // ---- MCP (streamable HTTP, stateless, plain JSON answers) ----

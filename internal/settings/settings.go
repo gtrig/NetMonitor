@@ -75,7 +75,7 @@ func Secrets(c *config.Config) []string {
 // Mask returns the editable sections of raw with secrets hidden and OriginalName set.
 func Mask(raw *config.Config) Editable {
 	workers, debug := raw.Workers, raw.Debug
-	debug.Allow = nonNil(slices.Clone(debug.Allow))
+	debug.Allow, debug.Proxies = nonNil(slices.Clone(debug.Allow)), nonNil(slices.Clone(debug.Proxies))
 	e := Editable{
 		Workers:     &workers,
 		Debug:       &debug,

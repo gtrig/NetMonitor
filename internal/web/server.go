@@ -62,6 +62,8 @@ type Settings interface {
 // Debug is the MCP server of debug mode.
 type Debug interface {
 	Status() debug.Status
+	// Handler answers debug.Path; nil unless it runs on this port.
+	Handler() http.Handler
 	NewToken() (string, error)
 }
 
@@ -159,6 +161,16 @@ func New(d Deps) http.Handler {
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthz", s.healthz)
+	// Not behind the login: it checks a token and the client's address itself.
+	root.HandleFunc(debug.Path, func(w http.ResponseWriter, r *http.Request) {
+		if s.Debug != nil {
+			if h := s.Debug.Handler(); h != nil {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	})
 	// Rejects cross-site POST/PATCH (CSRF, also against DNS-rebinding pages in browsers).
 	root.Handle("/", s.auth(http.NewCrossOriginProtection().Handler(mux)))
 	return securityHeaders(root)
