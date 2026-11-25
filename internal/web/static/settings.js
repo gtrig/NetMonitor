@@ -145,10 +145,10 @@
         const p = `networks.${i}.sources.${j}`;
         const refs = s.type === "router" ? routerNames : s.type === "snmp" ? snmpNames : [];
         return `<div class="flex w-full flex-wrap items-end gap-2">
-          ${select(`${p}.type`, "Source", s.type, ["router", "snmp", "nmap", "services"], { restructure: true, cls: "w-[120px]" })}
-          ${s.type === "nmap" || s.type === "services" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: s.type === "services" ? "-p 1-65535" : "-T4", cls: "min-w-40 max-w-[360px] flex-1" })
+          ${select(`${p}.type`, "Source", s.type, ["ping", "router", "snmp", "nmap", "services"], { restructure: true, cls: "w-[120px]" })}
+          ${s.type === "ping" ? `<p class="min-w-40 max-w-[360px] flex-1 text-xs text-muted">Pings every address; fastest at noticing devices come and go. Add nmap too for devices that block ping.</p>` : s.type === "nmap" || s.type === "services" ? text(`${p}.args`, "Extra nmap args", (s.args || []).join(" "), { ph: s.type === "services" ? "-p 1-65535" : "-T4", cls: "min-w-40 max-w-[360px] flex-1" })
             : select(`${p}.ref`, s.type === "router" ? "Router" : "SNMP target", s.ref || "", ["", ...refs], { empty: "choose…", cls: "min-w-40 max-w-[360px] flex-1" })}
-          ${text(`${p}.interval`, "Every", s.interval, { ph: s.type === "services" ? "6h" : "5m", cls: "w-[90px]" })}
+          ${text(`${p}.interval`, "Every", s.interval, { ph: s.type === "services" ? "6h" : s.type === "ping" ? "10s" : "5m", cls: "w-[90px]" })}
           ${s.type === "nmap" ? check(`${p}.traceroute`, "Traceroute", s.traceroute) : ""}
           ${meta.can_edit ? `<button class="btn btn-sm btn-danger" data-del-source="${i}" data-j="${j}" type="button" aria-label="Remove source">×</button>` : ""}
         </div>`;
@@ -238,7 +238,7 @@
 
   const renderers = {
     workers: renderWorkers,
-    networks: () => section("networks", "Networks", "Add network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored. nmap finds who is online; services runs a slow detailed scan (open ports, service versions, OS) of the hosts that are online.", "No networks yet. Add one to start discovering devices."),
+    networks: () => section("networks", "Networks", "Add network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored. ping and nmap find who is online; services runs a slow detailed scan (open ports, service versions, OS) of the hosts that are online.", "No networks yet. Add one to start discovering devices."),
     routers: () => section("routers", "Routers", "Add router", renderRouters(), "MikroTik routers, read over the RouterOS API. Use a read-only API user. Secrets can be written as ${NAME} to keep them in .env.", "No routers yet."),
     snmp_targets: () => section("snmp_targets", "SNMP targets", "Add SNMP target", renderSNMP(), "", "No SNMP targets yet."),
     channels: () => section("channels", "Channels", "Add channel", renderChannels(), "Where alerts are sent. Save before sending a test to a new or changed channel.", "No channels yet. Add one to receive alerts."),
@@ -313,7 +313,8 @@
       if (v !== "nmap") setPath(path.replace(/type$/, "traceroute"), false);
       if (v !== "nmap" && v !== "services") setPath(path.replace(/type$/, "args"), []);
       if (v === "services") setPath(path.replace(/type$/, "interval"), "6h");
-      else if (getPath(path) === "services") setPath(path.replace(/type$/, "interval"), "15m");
+      else if (v === "ping") setPath(path.replace(/type$/, "interval"), "10s");
+      else if (["services", "ping"].includes(getPath(path))) setPath(path.replace(/type$/, "interval"), "15m");
     }
     setPath(path, v);
     typing = null;

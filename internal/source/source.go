@@ -4,6 +4,7 @@ package source
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
@@ -99,6 +100,12 @@ func combine(a, b model.Host) model.Host {
 		a.Source = b.Source
 	}
 	return a
+}
+
+// Neighbor is what the system knows about a host on an attached network.
+type Neighbor struct {
+	MAC       string
+	Confirmed time.Time // when the host last proved it has the MAC
 }
 
 // Progress is how far a running collection has got.

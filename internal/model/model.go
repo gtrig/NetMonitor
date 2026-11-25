@@ -59,6 +59,8 @@ type Device struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	Sources   []string
+	// OfflineAfter is how long it may be silent before it is offline, set by the user (0 = learned).
+	OfflineAfter time.Duration
 	// PrevKey is set (not stored) when the device's key changed in this update,
 	// e.g. an IP-only device whose MAC became known; the store renames the row.
 	PrevKey string
@@ -67,6 +69,20 @@ type Device struct {
 	// MergedInto is set (not stored) when this IP-only device was folded into another device;
 	// the store moves its label/known flag to that device and deletes this row.
 	MergedInto string
+}
+
+// Presence is how ping judges a device.
+type Presence struct {
+	Pattern Pattern
+	Limit   time.Duration // how long it may be silent
+	Asleep  bool          // silent longer than usual for always-on devices, but within its limit
+}
+
+// Pattern is how long a device is usually silent. Typical and Spread are zero unless Periodic.
+type Pattern struct {
+	Periodic        bool
+	Typical, Spread time.Duration
+	Longest         time.Duration // 95th percentile of the usual gaps
 }
 
 // MemberRef identifies one stored device row.

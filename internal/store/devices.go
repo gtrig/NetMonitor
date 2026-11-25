@@ -13,7 +13,7 @@ import (
 
 // Devices returns the devices of network, or of all networks when network is "".
 func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, error) {
-	q := `SELECT network, key, mac, ip, hostname, vendor, label, port, known, online, first_seen, last_seen, sources, seen_by FROM devices`
+	q := `SELECT network, key, mac, ip, hostname, vendor, label, port, known, online, first_seen, last_seen, sources, seen_by, offline_after FROM devices`
 	var args []any
 	if network != "" {
 		q += ` WHERE network = ?`
@@ -29,12 +29,13 @@ func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, er
 	for rows.Next() {
 		var d model.Device
 		var ip, sources, seenBy string
-		var first, last int64
+		var first, last, offlineAfter int64
 		if err := rows.Scan(&d.Network, &d.Key, &d.MAC, &ip, &d.Hostname, &d.Vendor, &d.Label, &d.Port,
-			&d.Known, &d.Online, &first, &last, &sources, &seenBy); err != nil {
+			&d.Known, &d.Online, &first, &last, &sources, &seenBy, &offlineAfter); err != nil {
 			return nil, err
 		}
 		d.IP, _ = netip.ParseAddr(ip)
+		d.OfflineAfter = time.Duration(offlineAfter) * time.Second
 		d.FirstSeen = time.Unix(first, 0).UTC()
 		d.LastSeen = time.Unix(last, 0).UTC()
 		if sources != "" {
@@ -60,7 +61,7 @@ func (s *Store) Devices(ctx context.Context, network string) ([]model.Device, er
 	return out, rows.Err()
 }
 
-// UpsertDevices inserts or updates devices. Label and Known are never overwritten (see SetDeviceMeta).
+// UpsertDevices inserts or updates devices. Label, Known and OfflineAfter are never overwritten (see SetDeviceMeta).
 func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -83,7 +84,8 @@ func (s *Store) UpsertDevices(ctx context.Context, devs []model.Device) error {
 			// Move user metadata to the surviving device, then drop this row.
 			if _, err := tx.ExecContext(ctx, `UPDATE devices SET
 				label = CASE WHEN label = '' THEN (SELECT label FROM devices WHERE network = ?1 AND key = ?2) ELSE label END,
-				known = MAX(known, (SELECT known FROM devices WHERE network = ?1 AND key = ?2))
+				known = MAX(known, (SELECT known FROM devices WHERE network = ?1 AND key = ?2)),
+				offline_after = CASE WHEN offline_after = 0 THEN (SELECT offline_after FROM devices WHERE network = ?1 AND key = ?2) ELSE offline_after END
 				WHERE network = ?1 AND key = ?3 AND EXISTS (SELECT 1 FROM devices WHERE network = ?1 AND key = ?2)`,
 				d.Network, d.Key, d.MergedInto); err != nil {
 				return err
@@ -160,6 +162,18 @@ func (s *Store) SetDeviceMeta(ctx context.Context, key string, label *string, kn
 		if _, err := s.db.ExecContext(ctx, `UPDATE devices SET known = ? WHERE key = ?`, *known, key); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SetOfflineAfter sets how long the device rows with key may be silent before they are offline (0 = learned).
+func (s *Store) SetOfflineAfter(ctx context.Context, key string, d time.Duration) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET offline_after = ? WHERE key = ?`, int64(d/time.Second), key)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }

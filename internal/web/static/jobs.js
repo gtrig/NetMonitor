@@ -72,7 +72,7 @@
   const history = document.getElementById("history");
   let seen = null;
   async function refreshHistory() {
-    const now = jobs.map((j) => [j.queueId, j.id < 0 ? "" : j.lastRun, j.running]).join();
+    const now = jobs.map((j) => j.source === "ping" ? [j.queueId, j.lastErr] : [j.queueId, j.id < 0 ? "" : j.lastRun, j.running]).join();
     const changed = seen !== null && now !== seen;
     seen = now;
     if (!changed || "older" in history.dataset || history.contains(document.activeElement) || !getSelection().isCollapsed) return;

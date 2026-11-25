@@ -82,7 +82,7 @@ func (s *Scheduler) hasPingJob(network string) bool {
 
 // recordNmapRTTs stores the times nmap measured, for networks no router pings.
 func (s *Scheduler) recordNmapRTTs(ctx context.Context, obs model.Observations) error {
-	if obs.Source != "nmap" || s.hasPingJob(obs.Network) {
+	if obs.Source != "nmap" || s.hasPingJob(obs.Network) || s.sweeps[obs.Network] != nil {
 		return nil
 	}
 	rtts := map[netip.Addr]time.Duration{}

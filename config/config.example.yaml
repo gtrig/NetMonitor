@@ -35,6 +35,7 @@ networks:
       - {type: router, ref: core, interval: 1m}
       - {type: snmp, ref: core-snmp, interval: 5m}
       - {type: nmap, interval: 15m}
+      # - {type: ping, interval: 10s}   # fast presence; keep another source for devices that block ping
 
 channels:
   - name: telegram
@@ -62,3 +63,9 @@ rules:
   # Anything suspicious goes everywhere.
   - events: [mac_changed_for_ip]
     channels: [telegram, discord, email]
+
+# Who may connect to the MCP server of debug mode (netmon -debug or NETMON_DEBUG=1). Without allow,
+# only this machine. Every client also needs the token. With other networks here it listens on every address, port 8099.
+# debug:
+#   allow: [127.0.0.0/8, 192.168.8.0/24]
+#   listen: 192.168.8.5:8099

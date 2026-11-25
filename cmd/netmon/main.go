@@ -5,17 +5,20 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/gtrig/netmon/internal/app"
 	"github.com/gtrig/netmon/internal/config"
+	"github.com/gtrig/netmon/internal/debug"
 	"github.com/gtrig/netmon/internal/enrich"
 	"github.com/gtrig/netmon/internal/store"
 	"github.com/gtrig/netmon/internal/web"
@@ -35,7 +38,19 @@ func run() error {
 		defPath = "./config/config.yaml"
 	}
 	cfgPath := flag.String("config", defPath, "path to config.yaml (env NETMON_CONFIG)")
+	debugOn := flag.Bool("debug", false, "serve an MCP server for debugging, see debug: in the config (env NETMON_DEBUG=1)")
 	flag.Parse()
+	if v := os.Getenv("NETMON_DEBUG"); v != "" && !*debugOn {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("NETMON_DEBUG: %q is not a boolean", v)
+		}
+		*debugOn = on
+	}
+	logs := &debug.Logs{}
+	if *debugOn {
+		slog.SetDefault(slog.New(logs.Handler(slog.Default().Handler())))
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -84,9 +99,34 @@ func run() error {
 		rt := a.Current()
 		return web.Runtime{Scheduler: rt.Scheduler, Notifier: rt.Dispatcher, Config: rt.Config, Gateways: rt.Gateways}
 	}
+	ui := web.New(web.Deps{Store: st, Runtime: runtime, Settings: a})
+	if *debugOn {
+		token, where, err := debug.LoadToken(os.Getenv("NETMON_DEBUG_TOKEN"), filepath.Join(cfg.DataDir, "debug-token"))
+		if err != nil {
+			return err
+		}
+		ln, err := net.Listen("tcp", cfg.Debug.Addr())
+		if err != nil {
+			return fmt.Errorf("debug server: %w", err)
+		}
+		dbg := &http.Server{ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, Handler: debug.New(debug.Deps{
+			Token: token, Logs: logs, Store: st, DBPath: filepath.Join(cfg.DataDir, "netmon.db"), UI: ui, Raw: a.Raw, ConfigPath: *cfgPath,
+			Runtime: func() debug.Runtime {
+				rt := a.Current()
+				return debug.Runtime{Config: rt.Config, Scheduler: rt.Scheduler}
+			},
+		})}
+		defer dbg.Close()
+		go func() {
+			if err := dbg.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("debug server stopped", "err", err)
+			}
+		}()
+		slog.Warn("debug mode: MCP server listening", "url", "http://"+ln.Addr().String()+debug.Path, "allow", cfg.Debug.Networks(), "token", where)
+	}
 	srv := &http.Server{
 		Addr:              cfg.Listen,
-		Handler:           web.New(web.Deps{Store: st, Runtime: runtime, Settings: a}),
+		Handler:           ui,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	httpErr := make(chan error, 1)

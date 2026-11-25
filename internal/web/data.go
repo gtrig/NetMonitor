@@ -20,6 +20,31 @@ type deviceRow struct {
 	Machine  int64
 	Details  *model.DeviceDetails
 	Services string
+	Presence *model.Presence // nil: not judged by ping
+}
+
+func (r deviceRow) Asleep() bool { return r.Presence != nil && r.Presence.Asleep }
+
+// Status is the state of the device as shown.
+func (r deviceRow) Status() string {
+	switch {
+	case !r.Online:
+		return "offline"
+	case r.Asleep():
+		return "asleep"
+	}
+	return "online"
+}
+
+// withPresence adds how ping judges the devices of rows.
+func (s *server) withPresence(rows []deviceRow, devs []model.Device) []deviceRow {
+	all := s.rt().Scheduler.Presence(devs)
+	for i := range rows {
+		if p, ok := all[model.MemberRef{Network: rows[i].Network, Key: rows[i].Key}]; ok {
+			rows[i].Presence = &p
+		}
+	}
+	return rows
 }
 
 // groupRows attaches machine ids and moves the members of each machine right after its first member.

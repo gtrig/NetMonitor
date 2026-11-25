@@ -41,6 +41,7 @@ type Runtime struct {
 		ScanDevice(network, key string) error
 		Cancel(queueID string) error
 		Status() []scheduler.JobStatus
+		Presence(devs []model.Device) map[model.MemberRef]model.Presence
 	}
 	Notifier interface {
 		Test(ctx context.Context, channel string) error
@@ -205,6 +206,7 @@ type deviceJSON struct {
 	LastSeen  time.Time `json:"lastSeen"`
 	Sources   []string  `json:"sources"`
 	Machine   int64     `json:"machine,omitempty"`
+	Asleep    bool      `json:"asleep,omitempty"`
 }
 
 func toJSON(d model.Device, machine int64) deviceJSON {
@@ -216,7 +218,7 @@ func toJSON(d model.Device, machine int64) deviceJSON {
 		d.Sources = []string{}
 	}
 	return deviceJSON{d.Key, d.Network, d.MAC, ip, d.Hostname, d.Vendor, d.Label, d.Port, d.Known, d.Online,
-		d.FirstSeen, d.LastSeen, d.Sources, machine}
+		d.FirstSeen, d.LastSeen, d.Sources, machine, false}
 }
 
 type eventJSON struct {
@@ -334,7 +336,7 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 	for _, n := range rt.Config.Networks {
 		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR})
 	}
-	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines, Pings: pings,
+	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines, Pings: pings, Presence: rt.Scheduler.Presence(devs),
 		Networks: nets, RouterAddrs: routerAddrs(rt.Config), Compound: network == "" && len(nets) > 1})
 	if els == nil {
 		els = []topology.Element{}
@@ -354,8 +356,12 @@ func (s *server) apiDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]deviceJSON, 0, len(devs))
+	presence := s.rt().Scheduler.Presence(devs)
 	for _, d := range devs {
-		out = append(out, toJSON(d, machines[model.MemberRef{Network: d.Network, Key: d.Key}]))
+		ref := model.MemberRef{Network: d.Network, Key: d.Key}
+		j := toJSON(d, machines[ref])
+		j.Asleep = presence[ref].Asleep
+		out = append(out, j)
 	}
 	writeJSON(w, out)
 }
@@ -389,6 +395,8 @@ func (s *server) apiPatchDevice(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Label *string `json:"label"`
 		Known *bool   `json:"known"`
+		// OfflineAfter is a duration such as "15m"; "" goes back to the learned one.
+		OfflineAfter *string `json:"offline_after"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -399,7 +407,18 @@ func (s *server) apiPatchDevice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "label too long", http.StatusBadRequest)
 		return
 	}
+	var offlineAfter time.Duration
+	if v := body.OfflineAfter; v != nil && *v != "" {
+		var err error
+		if offlineAfter, err = time.ParseDuration(*v); err != nil || offlineAfter < time.Second || offlineAfter > 7*24*time.Hour {
+			http.Error(w, "offline after must be a duration from 1s to 168h, such as 15m", http.StatusBadRequest)
+			return
+		}
+	}
 	err := s.Store.SetDeviceMeta(r.Context(), r.PathValue("key"), body.Label, body.Known)
+	if err == nil && body.OfflineAfter != nil {
+		err = s.Store.SetOfflineAfter(r.Context(), r.PathValue("key"), offlineAfter)
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		http.Error(w, "device not found", http.StatusNotFound)
@@ -566,7 +585,7 @@ func (s *server) devicesPage(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: groupRows(devs, machines, details), Network: network,
+	s.render(w, "devices", pageData{Title: "Devices", Networks: nets, Devices: s.withPresence(groupRows(devs, machines, details), devs), Network: network,
 		CanEdit: s.canEdit()})
 }
 

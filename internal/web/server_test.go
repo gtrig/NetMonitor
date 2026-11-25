@@ -18,7 +18,10 @@ import (
 	"github.com/gtrig/netmon/internal/store"
 )
 
-type fakeSched struct{ scanned []string }
+type fakeSched struct {
+	scanned  []string
+	presence map[model.MemberRef]model.Presence
+}
 
 func (f *fakeSched) ScanNow(n string) error {
 	if n != "lan" {
@@ -49,6 +52,10 @@ func (f *fakeSched) ScanDevice(network, key string) error {
 }
 func (f *fakeSched) Status() []scheduler.JobStatus {
 	return []scheduler.JobStatus{{Network: "lan", Source: "nmap"}}
+}
+
+func (f *fakeSched) Presence(devs []model.Device) map[model.MemberRef]model.Presence {
+	return f.presence
 }
 
 type fakeNotifier struct{}

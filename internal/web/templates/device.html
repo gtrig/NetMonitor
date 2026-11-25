@@ -1,8 +1,8 @@
 {{define "content"}}{{with .Device}}
 <p class="text-xs mb-3"><a href="/devices">← Devices</a></p>
 <div class="mb-3 flex flex-wrap items-center gap-4">
-  <h1><span class="pill {{if .Online}}bg-ok{{end}}"></span>{{.Name}}</h1>
-  <span class="text-muted">{{if .Online}}online{{else}}offline{{end}}</span>
+  <h1><span class="pill {{if .Asleep}}bg-accent{{else if .Online}}bg-ok{{end}}"></span>{{.Name}}</h1>
+  <span class="text-muted">{{.Status}}</span>
   {{if not .Known}}<span class="tag">unreviewed</span>{{end}}
 </div>
 <div id="device" data-key="{{.Key}}" data-network="{{.Network}}">
@@ -27,6 +27,8 @@
       <dt class="text-muted">Network</dt><dd class="min-w-0 wrap-break-word"><a href="/devices?network={{.Network}}">{{.Network}}</a></dd>
       <dt class="text-muted">First seen</dt><dd class="min-w-0 wrap-break-word">{{ts .FirstSeen}}</dd>
       <dt class="text-muted">Last seen</dt><dd title="{{ts .LastSeen}}">{{ago .LastSeen}}</dd>
+      {{if or .Presence .Override}}<dt class="text-muted">Pattern</dt><dd class="min-w-0 wrap-break-word">{{or .Pattern "not judged by ping"}}</dd>
+      <dt class="text-muted">Offline after</dt><dd class="min-w-0 wrap-break-word"><input class="offline-after control w-full max-w-[260px]" value="{{.Override}}" placeholder="automatic" maxlength="20" aria-label="Offline after" title="How long this device may be silent, such as 15m. Empty: learned from its usual silences."></dd>{{end}}
       <dt class="text-muted">Sources</dt><dd class="min-w-0 wrap-break-word">{{range $i, $s := .Sources}}{{if $i}}, {{end}}{{$s}}{{else}}—{{end}}</dd>
     </dl>
   </section>
@@ -42,7 +44,7 @@
 </div>
 {{if .Others}}<h2>Other addresses of this machine</h2>
 <div class="table-wrap mb-6"><table class="data-table"><tbody>
-{{range .Others}}<tr><td><span class="pill {{if .Online}}bg-ok{{end}}"></span></td><td><a class="mono" href="/device?network={{.Network}}&amp;key={{.Key}}">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}}</a></td><td class="mono">{{.MAC}}</td><td>{{.Network}}</td><td>{{ago .LastSeen}}</td></tr>{{end}}
+{{range .Others}}<tr><td><span class="pill {{if .Asleep}}bg-accent{{else if .Online}}bg-ok{{end}}" title="{{.Status}}"></span></td><td><a class="mono" href="/device?network={{.Network}}&amp;key={{.Key}}">{{if .IP.IsValid}}{{.IP}}{{else}}{{.Key}}{{end}}</a></td><td class="mono">{{.MAC}}</td><td>{{.Network}}</td><td>{{ago .LastSeen}}</td></tr>{{end}}
 </tbody></table></div>{{end}}
 </div>
 <h2>Ping history</h2>

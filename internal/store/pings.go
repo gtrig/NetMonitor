@@ -127,6 +127,7 @@ func movePings(ctx context.Context, tx *sql.Tx, network, from, to string) error 
 		`UPDATE OR IGNORE device_pings SET key = ?3 WHERE network = ?1 AND key = ?2`,
 		`DELETE FROM device_pings WHERE network = ?1 AND key = ?2 AND ?3 <> ?2`,
 		`UPDATE ping_history SET key = ?3 WHERE network = ?1 AND key = ?2`,
+		`UPDATE presence_gaps SET key = ?3 WHERE network = ?1 AND key = ?2`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, network, from, to); err != nil {
 			return err

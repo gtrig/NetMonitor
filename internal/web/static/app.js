@@ -55,6 +55,10 @@ if (devicePage) {
       } else if (e.target.classList.contains("label")) {
         await patchDevice(ref.key, { label: e.target.value.trim() });
         toast("Label saved");
+      } else if (e.target.classList.contains("offline-after")) {
+        const v = e.target.value.trim();
+        await patchDevice(ref.key, { offline_after: v });
+        toast(v ? "Offline after " + v : "Offline after is automatic again");
       }
     } catch (err) { toast("Save failed: " + err.message); }
   });

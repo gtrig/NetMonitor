@@ -31,7 +31,7 @@
   {{range .Devices}}
   <tr data-key="{{.Key}}" data-network="{{.Network}}" data-known="{{.Known}}" class="group cursor-pointer hover:bg-page" {{if .Machine}}data-machine="{{.Machine}}"{{end}}>
     <td class="select-cell {{if .Machine}}stripe-router{{else}}group-data-[known=false]:stripe-warn{{end}}"><input type="checkbox" class="sel block" autocomplete="off" aria-label="Select device"></td>
-    <td data-sort="{{if .Online}}0{{else}}1{{end}}"><span class="pill {{if .Online}}bg-ok{{end}}" title="{{if .Online}}online{{else}}offline{{end}}"></span></td>
+    <td data-sort="{{if .Asleep}}1{{else if .Online}}0{{else}}2{{end}}"><span class="pill {{if .Asleep}}bg-accent{{else if .Online}}bg-ok{{end}}" title="{{.Status}}"></span>{{if .Asleep}}<span class="tag">asleep</span>{{end}}</td>
     <td><div class="flex items-center gap-2"><input class="label control w-[145px] border-transparent bg-transparent hover:border-line hover:bg-surface focus:border-line focus:bg-surface" value="{{.Label}}" autocomplete="off" data-hostname="{{.Hostname}}" placeholder="{{if .Hostname}}{{.Hostname}}{{else}}add a label{{end}}" aria-label="Label">{{if .Machine}}<span class="tag border-router text-router" title="Grouped with other rows as one machine">machine {{.Machine}}</span>{{end}}</div></td>
     <td class="mono" data-sort="{{if .IP.IsValid}}{{.IP}}{{end}}"><a class="device-link" href="/device?network={{.Network}}&amp;key={{.Key}}">{{if .IP.IsValid}}{{.IP}}{{else}}details{{end}}</a></td>
     <td class="mono">{{.MAC}}</td>

@@ -8,7 +8,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/model"
 )
 
@@ -18,6 +20,34 @@ type deviceView struct {
 	Name   string
 	Links  []string
 	Others []deviceRow // the other addresses of the same machine
+}
+
+// Pattern describes how long the device is usually silent, and what that means.
+func (r deviceRow) Pattern() string {
+	p := r.Presence
+	if p == nil {
+		return ""
+	}
+	out := "no regular pattern"
+	if p.Pattern.Periodic {
+		out = "silent for about " + roundDuration(p.Pattern.Typical) + " at a time (±" + roundDuration(p.Pattern.Spread) + ")"
+	}
+	return out + ", offline after " + roundDuration(p.Limit)
+}
+
+func roundDuration(d time.Duration) string {
+	if d > 10*time.Minute && d%time.Minute != 0 {
+		d = d.Round(30 * time.Second)
+	}
+	return config.FormatDuration(d.Round(time.Second))
+}
+
+// Override is the user's own limit, or "".
+func (r deviceRow) Override() string {
+	if r.OfflineAfter == 0 {
+		return ""
+	}
+	return config.FormatDuration(r.OfflineAfter)
 }
 
 // webLinks returns the web interfaces among the scanned ports, or http://<ip> when there are none.
@@ -76,7 +106,7 @@ func (s *server) devicePage(w http.ResponseWriter, r *http.Request) {
 	var v *deviceView
 	refs := []model.MemberRef{self}
 	var others []deviceRow
-	for _, row := range groupRows(devs, machines, details) {
+	for _, row := range s.withPresence(groupRows(devs, machines, details), devs) {
 		ref := model.MemberRef{Network: row.Network, Key: row.Key}
 		switch {
 		case ref == self:

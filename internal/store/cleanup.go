@@ -27,11 +27,13 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 			// known flag; then the row seen most recently survives.
 			`UPDATE devices AS t SET
 				label = CASE WHEN t.label = '' THEN f.label ELSE t.label END,
-				known = MAX(t.known, f.known)
+				known = MAX(t.known, f.known),
+				offline_after = CASE WHEN t.offline_after = 0 THEN f.offline_after ELSE t.offline_after END
 			FROM devices AS f WHERE f.network = ?1 AND t.network = ?2 AND f.key = t.key`,
 			`UPDATE devices AS f SET
 				label = CASE WHEN f.label = '' THEN t.label ELSE f.label END,
-				known = MAX(t.known, f.known)
+				known = MAX(t.known, f.known),
+				offline_after = CASE WHEN f.offline_after = 0 THEN t.offline_after ELSE f.offline_after END
 			FROM devices AS t WHERE f.network = ?1 AND t.network = ?2 AND f.key = t.key`,
 			`DELETE FROM devices WHERE network = ?2 AND key IN
 				(SELECT f.key FROM devices AS f WHERE f.network = ?1 AND f.last_seen > devices.last_seen)`,
@@ -52,6 +54,7 @@ func (s *Store) RenameNetwork(ctx context.Context, from, to string) error {
 			`UPDATE OR IGNORE device_pings SET network = ?2 WHERE network = ?1`,
 			`DELETE FROM device_pings WHERE network = ?1`,
 			`UPDATE ping_history SET network = ?2 WHERE network = ?1`,
+			`UPDATE presence_gaps SET network = ?2 WHERE network = ?1`,
 			`UPDATE job_runs SET network = ?2 WHERE network = ?1`,
 		}
 		for _, q := range stmts {
@@ -98,6 +101,7 @@ func (s *Store) DeleteNetworkData(ctx context.Context, name string) error {
 			`DELETE FROM device_details WHERE network = ?`,
 			`DELETE FROM device_pings WHERE network = ?`,
 			`DELETE FROM ping_history WHERE network = ?`,
+			`DELETE FROM presence_gaps WHERE network = ?`,
 			`DELETE FROM job_runs WHERE network = ?`,
 		} {
 			if _, err := tx.ExecContext(ctx, q, name); err != nil {
@@ -121,7 +125,8 @@ func (s *Store) DeleteDevice(ctx context.Context, network, key string) error {
 		for _, q := range []string{`DELETE FROM machine_members WHERE network = ? AND key = ?`,
 			`DELETE FROM device_details WHERE network = ? AND key = ?`,
 			`DELETE FROM device_pings WHERE network = ? AND key = ?`,
-			`DELETE FROM ping_history WHERE network = ? AND key = ?`} {
+			`DELETE FROM ping_history WHERE network = ? AND key = ?`,
+			`DELETE FROM presence_gaps WHERE network = ? AND key = ?`} {
 			if _, err := tx.ExecContext(ctx, q, network, key); err != nil {
 				return err
 			}

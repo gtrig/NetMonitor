@@ -19,7 +19,7 @@ type Priority int
 
 const (
 	PrioManual    Priority = iota
-	PrioPresence           // scheduled router/snmp/nmap collections
+	PrioPresence           // scheduled router/snmp/nmap collections (and ping sweeps, which do not queue)
 	PrioScheduled          // devices of a scheduled detailed scan
 	PrioAuto               // devices that were never scanned in detail
 )

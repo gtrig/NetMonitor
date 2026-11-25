@@ -15,10 +15,12 @@ import (
 	"github.com/gtrig/netmon/internal/config"
 	"github.com/gtrig/netmon/internal/enrich"
 	"github.com/gtrig/netmon/internal/notify"
+	"github.com/gtrig/netmon/internal/presence"
 	"github.com/gtrig/netmon/internal/scheduler"
 	"github.com/gtrig/netmon/internal/source"
 	"github.com/gtrig/netmon/internal/source/mikrotik"
 	"github.com/gtrig/netmon/internal/source/nmap"
+	"github.com/gtrig/netmon/internal/source/ping"
 	"github.com/gtrig/netmon/internal/source/snmp"
 	"github.com/gtrig/netmon/internal/store"
 	"go.yaml.in/yaml/v3"
@@ -95,6 +97,9 @@ func (a *App) prune(ctx context.Context) {
 		if err := a.opts.Store.PruneJobRuns(ctx, time.Now().Add(-retention)); err != nil && ctx.Err() == nil {
 			slog.Warn("pruning job history failed", "err", err)
 		}
+		if err := a.opts.Store.PruneGaps(ctx, time.Now().Add(-presence.Window)); err != nil && ctx.Err() == nil {
+			slog.Warn("pruning presence gaps failed", "err", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -169,6 +174,9 @@ func (a *App) swap(raw, eff *config.Config, renames map[string]string) error {
 		slog.Warn("listen/data_dir changes take effect after a restart")
 		eff.Listen, eff.DataDir = old.Config.Listen, old.Config.DataDir
 	}
+	if eff.Debug.Addr() != old.Config.Debug.Addr() {
+		slog.Warn("the debug server keeps its address until a restart", "new", eff.Debug.Addr())
+	}
 	if _, err := notify.FromConfig(eff.Channels); err != nil {
 		return err // fail before stopping the running runtime
 	}
@@ -221,7 +229,7 @@ func (a *App) Close() {
 	}
 }
 
-// DefaultBuild creates real MikroTik, SNMP and nmap sources from cfg.
+// DefaultBuild creates real MikroTik, SNMP, nmap and ping sources from cfg.
 func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 	// Map router management addresses to configured names so neighbors and SNMP views of
 	// the same router land on one map node, even when identities collide.
@@ -264,6 +272,9 @@ func DefaultBuild(cfg *config.Config) ([]scheduler.Job, map[string]string) {
 				src = targets[ref.Ref]
 			case "nmap":
 				src = nmap.New(ref.Args, ref.Traceroute, nil)
+			case "ping":
+				jobs = append(jobs, scheduler.Job{Network: n, Sweep: ping.Sweeper{}, Interval: ref.Interval.Duration})
+				continue
 			case "services":
 				jobs = append(jobs, scheduler.Job{Network: n, Details: nmap.NewServices(ref.Args, nil), Interval: ref.Interval.Duration})
 				continue

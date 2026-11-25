@@ -39,6 +39,8 @@ type Input struct {
 	Networks []NetInfo
 	// Pings are the smoothed round-trip times of device rows.
 	Pings map[model.MemberRef]model.Ping
+	// Presence is how ping judges device rows.
+	Presence map[model.MemberRef]model.Presence
 	// Compound draws each network as a box holding its nodes; nodes in several networks sit
 	// outside the boxes with a "member" edge to each.
 	Compound bool
@@ -375,7 +377,7 @@ func Build(in Input) []Element {
 			"id": id, "kind": "hop", "label": ip.String(), "ip": ip.String(), "network": netOf(ip)})})
 	}
 	for _, id := range order {
-		els = append(els, Element{Group: "nodes", Data: withParent(id, deviceData(groups[id], in.Pings))})
+		els = append(els, Element{Group: "nodes", Data: withParent(id, deviceData(groups[id], in.Pings, in.Presence))})
 	}
 
 	pairs := make([]string, 0, len(edgesByPair))
@@ -407,13 +409,13 @@ type rttJSON struct {
 	Origin string    `json:"origin"`
 }
 
-func deviceData(g *group, pings map[model.MemberRef]model.Ping) map[string]any {
+func deviceData(g *group, pings map[model.MemberRef]model.Ping, presence map[model.MemberRef]model.Presence) map[string]any {
 	first := g.members[0]
 	var label, hostname, vendor, port string
 	var ips, macs []string
 	var members []memberJSON
 	rtt := map[string]rttJSON{}
-	online, known := false, true
+	online, awake, known := false, false, true
 	var firstSeen, lastSeen time.Time
 	for _, d := range g.members {
 		label = cmpOr(label, d.Label)
@@ -431,6 +433,7 @@ func deviceData(g *group, pings map[model.MemberRef]model.Ping) map[string]any {
 			macs = append(macs, d.MAC)
 		}
 		online = online || d.Online
+		awake = awake || (d.Online && !presence[model.MemberRef{Network: d.Network, Key: d.Key}].Asleep)
 		known = known && d.Known
 		if firstSeen.IsZero() || d.FirstSeen.Before(firstSeen) {
 			firstSeen = d.FirstSeen
@@ -447,6 +450,9 @@ func deviceData(g *group, pings map[model.MemberRef]model.Ping) map[string]any {
 	status := "offline"
 	if online {
 		status = "online"
+		if !awake {
+			status = "asleep"
+		}
 	}
 	nets := g.networks()
 	data := map[string]any{

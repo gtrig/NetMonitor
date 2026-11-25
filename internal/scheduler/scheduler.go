@@ -45,12 +45,14 @@ type DetailScanner interface {
 	Scan(ctx context.Context, targets []netip.Addr) ([]model.HostDetails, error)
 }
 
-// Job is one source collecting one network: presence (Source), details (Details) or ping times (Ping).
+// Job is one source collecting one network: presence (Source or, by fast pings, Sweep), details
+// (Details) or ping times (Ping).
 type Job struct {
 	Network      config.Network
 	Source       source.Source
 	Details      DetailScanner
 	Ping         Pinger
+	Sweep        Sweeper
 	Interval     time.Duration
 	OfflineAfter time.Duration
 }
@@ -62,6 +64,9 @@ func (j Job) Name() string {
 	}
 	if j.Ping != nil {
 		return j.Ping.Name()
+	}
+	if j.Sweep != nil {
+		return j.Sweep.Name()
 	}
 	return j.Source.Name()
 }
@@ -96,6 +101,7 @@ type Scheduler struct {
 	jobs    []Job
 	trigger []chan struct{}
 	queue   *queue
+	sweeps  map[string]*sweep // by network; nil for networks without a ping source
 
 	mu       sync.Mutex
 	status   []JobStatus
@@ -113,13 +119,16 @@ type Scheduler struct {
 // New returns a scheduler. oui and res may be nil.
 func New(st *store.Store, sink EventSink, oui *enrich.OUI, res *enrich.Resolver, jobs []Job) *Scheduler {
 	s := &Scheduler{st: st, sink: sink, oui: oui, res: res, jobs: jobs, queue: &queue{scans: config.DefaultScans, detailed: config.DefaultDetailed},
-		netLock: map[string]*sync.Mutex{}, devices: map[string]*deviceScan{}, retries: map[string]retry{}}
+		netLock: map[string]*sync.Mutex{}, devices: map[string]*deviceScan{}, retries: map[string]retry{}, sweeps: map[string]*sweep{}}
 	for i, j := range jobs {
 		s.trigger = append(s.trigger, make(chan struct{}, 1))
 		s.status = append(s.status, JobStatus{ID: i, QueueID: jobID(i, j), Network: j.Network.Name, Source: j.Name(),
 			Interval: humanDuration(j.Interval), State: StateIdle})
 		if s.netLock[j.Network.Name] == nil {
 			s.netLock[j.Network.Name] = &sync.Mutex{}
+		}
+		if j.Sweep != nil {
+			s.sweeps[j.Network.Name] = newSweep(j)
 		}
 	}
 	return s
@@ -151,6 +160,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 		go func(i int) {
 			defer wg.Done()
 			j := s.jobs[i]
+			if j.Sweep != nil {
+				s.runSweeps(ctx, i)
+				return
+			}
 			manual := false
 			t := time.NewTicker(j.Interval)
 			defer t.Stop()
@@ -221,7 +234,7 @@ func (s *Scheduler) runGuarded(ctx context.Context, i int, manual bool) {
 func (s *Scheduler) ScanNow(network string) error {
 	found := false
 	for i, j := range s.jobs {
-		if j.Network.Name == network && j.Source != nil {
+		if j.Network.Name == network && (j.Source != nil || j.Sweep != nil) {
 			found = true
 			s.triggerJob(i)
 		}
@@ -291,7 +304,7 @@ func (s *Scheduler) setStatus(j Job, f func(*JobStatus)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.status {
-		if s.jobs[i].Source == j.Source && s.jobs[i].Details == j.Details && s.jobs[i].Ping == j.Ping && s.jobs[i].Network.Name == j.Network.Name {
+		if s.jobs[i].Source == j.Source && s.jobs[i].Details == j.Details && s.jobs[i].Ping == j.Ping && s.jobs[i].Sweep == j.Sweep && s.jobs[i].Network.Name == j.Network.Name {
 			f(&s.status[i])
 		}
 	}
@@ -383,10 +396,15 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job, prio Priority) (string, 
 		return "", err
 	}
 	_, seenBefore := last[obs.Source]
+	sw := s.sweeps[name]
+	obs.Hosts = s.withoutStale(obs, known)
 	changed, events := diff.Apply(known, obs, !seenBefore)
+	ended := s.nmapSaw(obs, changed)
 	if err := s.st.UpsertDevices(ctx, changed); err != nil {
 		return "", err
 	}
+	s.storeGaps(ctx, name, time.Now().UTC(), ended)
+	sw.rename(changed)
 	if err := s.st.ReplaceLinks(ctx, name, obs.Source, obs.Links); err != nil {
 		return "", err
 	}
@@ -399,6 +417,7 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job, prio Priority) (string, 
 	if err != nil {
 		return "", err
 	}
+	known = slices.DeleteFunc(known, func(d model.Device) bool { return sw.governs(d, s.sweepName(name)) })
 	off, offEvents := diff.Offline(known, name, last, s.thresholds(name))
 	if err := s.st.UpsertDevices(ctx, off); err != nil {
 		return "", err
@@ -407,11 +426,8 @@ func (s *Scheduler) runOnce(ctx context.Context, j Job, prio Priority) (string, 
 	if err := s.recordNmapRTTs(ctx, obs); err != nil {
 		slog.Warn("storing ping times failed", "network", name, "err", err)
 	}
-	if err := s.st.AddEvents(ctx, events); err != nil {
+	if err := s.emit(ctx, events); err != nil {
 		return "", err
-	}
-	if len(events) > 0 && s.sink != nil {
-		s.sink.Enqueue(events)
 	}
 	if err := s.queueUnscanned(j); err != nil && ctx.Err() == nil {
 		slog.Warn("queueing detailed scans failed", "network", name, "err", err)

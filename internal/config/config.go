@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/gtrig/netmon/internal/model"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/gtrig/netmon/pinger"
 )
 
 const (
@@ -23,6 +26,9 @@ const (
 	DefaultDataDir  = "./data"
 	DefaultOUIPath  = "/usr/share/nmap/nmap-mac-prefixes"
 	DefaultInterval = 5 * time.Minute
+	// DefaultPingInterval and MinPingInterval are for ping sources.
+	DefaultPingInterval = 10 * time.Second
+	MinPingInterval     = 2 * time.Second
 	// DefaultServicesInterval is the default interval of detailed (services) scans.
 	DefaultServicesInterval = 6 * time.Hour
 	// DefaultScans and DefaultDetailed are the default worker counts; MaxScans is the upper limit.
@@ -42,6 +48,46 @@ type Config struct {
 	Networks    []Network    `yaml:"networks,omitempty" json:"networks,omitempty"`
 	Channels    []Channel    `yaml:"channels,omitempty" json:"channels,omitempty"`
 	Rules       []Rule       `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Debug       Debug        `yaml:"debug,omitempty" json:"-"`
+}
+
+// Debug is the MCP server of debug mode (netmon -debug); it does nothing otherwise.
+type Debug struct {
+	// Listen is its address; empty means DebugPort on this machine, or on every address when Allow
+	// has networks other than this machine.
+	Listen string `yaml:"listen,omitempty"`
+	// Allow are the networks that may connect; empty means only this machine.
+	Allow []netip.Prefix `yaml:"allow,omitempty"`
+}
+
+// DebugPort is the default port of the debug server.
+const DebugPort = "8099"
+
+var loopback = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+
+// Networks are the networks that may connect.
+func (d Debug) Networks() []netip.Prefix {
+	if len(d.Allow) == 0 {
+		return loopback
+	}
+	return d.Allow
+}
+
+// Allows reports whether addr may connect.
+func (d Debug) Allows(addr netip.Addr) bool {
+	addr = addr.Unmap().WithZone("")
+	return slices.ContainsFunc(d.Networks(), func(p netip.Prefix) bool { return p.Contains(addr) })
+}
+
+// Addr is the address to listen on.
+func (d Debug) Addr() string {
+	switch {
+	case d.Listen != "":
+		return d.Listen
+	case slices.ContainsFunc(d.Networks(), func(p netip.Prefix) bool { return !p.Addr().IsLoopback() }):
+		return ":" + DebugPort
+	}
+	return "127.0.0.1:" + DebugPort
 }
 
 type BasicAuth struct {
@@ -269,6 +315,9 @@ func (c *Config) applyDefaults() {
 			if n.Sources[j].Interval.Duration == 0 && n.Sources[j].Type == "services" {
 				n.Sources[j].Interval.Duration = DefaultServicesInterval
 			}
+			if n.Sources[j].Interval.Duration == 0 && n.Sources[j].Type == "ping" {
+				n.Sources[j].Interval.Duration = DefaultPingInterval
+			}
 			if n.Sources[j].Interval.Duration == 0 {
 				n.Sources[j].Interval.Duration = DefaultInterval
 			}
@@ -337,7 +386,7 @@ func (c *Config) Validate() error {
 		if len(n.Sources) == 0 {
 			bad("network %q: at least one source is required", n.Name)
 		}
-		services, presence := 0, 0
+		services, presence, pings := 0, 0, 0
 		for _, s := range n.Sources {
 			if s.Type != "services" {
 				presence++
@@ -353,6 +402,22 @@ func (c *Config) Validate() error {
 			case "snmp":
 				if !snmp[s.Ref] {
 					bad("network %q: snmp source refers to unknown snmp target %q", n.Name, s.Ref)
+				}
+			case "ping":
+				pings++
+				if pings == 2 {
+					bad("network %q: only one ping source per network", n.Name)
+				}
+				if s.Ref != "" || len(s.Args) > 0 {
+					bad("network %q: ping sources take no ref or args", n.Name)
+				}
+				if s.Interval.Duration < MinPingInterval {
+					bad("network %q: a ping source's interval must be at least %s", n.Name, MinPingInterval)
+				}
+				if n.CIDR.IsValid() {
+					if _, err := pinger.Hosts(n.CIDR); err != nil {
+						bad("network %q: ping source: %w", n.Name, err)
+					}
 				}
 			case "services":
 				services++
@@ -383,7 +448,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		if services > 0 && presence == 0 {
-			bad("network %q: a services source needs a presence source (nmap, router or snmp) to find hosts", n.Name)
+			bad("network %q: a services source needs a presence source (ping, nmap, router or snmp) to find hosts", n.Name)
 		}
 	}
 
@@ -428,6 +493,16 @@ func (c *Config) Validate() error {
 			if !nets[n] {
 				bad("rule %d: unknown network %q", i+1, n)
 			}
+		}
+	}
+	if c.Debug.Listen != "" {
+		if _, _, err := net.SplitHostPort(c.Debug.Listen); err != nil {
+			bad("debug: listen must be address:port")
+		}
+	}
+	for _, p := range c.Debug.Allow {
+		if !p.IsValid() || p.Addr().Is4In6() {
+			bad("debug: allow needs networks such as 192.168.8.0/24")
 		}
 	}
 	if c.Auth != nil && (c.Auth.Username == "" || c.Auth.Password == "") {

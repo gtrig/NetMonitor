@@ -108,6 +108,15 @@ var migrations = []string{
 	CREATE INDEX job_runs_outcome ON job_runs(outcome, id);
 	CREATE INDEX job_runs_kind ON job_runs(kind, id);
 	CREATE INDEX job_runs_at ON job_runs(at);`,
+	`CREATE TABLE presence_gaps (
+		id INTEGER PRIMARY KEY,
+		network TEXT NOT NULL,
+		key TEXT NOT NULL,
+		ended_at INTEGER NOT NULL,
+		seconds INTEGER NOT NULL
+	);
+	CREATE INDEX presence_gaps_device ON presence_gaps(network, key, id);
+	ALTER TABLE devices ADD COLUMN offline_after INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.

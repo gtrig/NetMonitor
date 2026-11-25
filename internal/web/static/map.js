@@ -14,6 +14,7 @@
   const graphStyle = () => [
     { selector: "node", style: { "background-color": v("--ok"), "width": 16, "height": 16, "border-width": 2, "border-color": v("--surface") } },
     { selector: "node[kind = 'device'][!known]", style: { "background-color": v("--warn") } },
+    { selector: "node[status = 'asleep']", style: { "background-opacity": 0.45 } },
     { selector: "node[status = 'offline']", style: { "background-color": v("--surface"), "border-color": v("--idle"), "width": 13, "height": 13 } },
     { selector: "node[kind = 'router'], node[?router]", style: { "shape": "round-rectangle", "width": 40, "height": 26, "background-color": v("--router") } },
     { selector: "node[?router][status = 'offline']", style: { "background-color": v("--surface"), "border-color": v("--router") } },
@@ -41,6 +42,7 @@
         "background-color": v("--ok"), "width": 18, "height": 18, "border-width": 2, "border-color": v("--surface"),
         "text-background-color": v("--surface"), "text-background-opacity": 0.8, "text-background-padding": 2 } },
       { selector: "node[kind = 'device'][!known]", style: { "background-color": v("--warn") } },
+      { selector: "node[status = 'asleep']", style: { "background-opacity": 0.45 } },
       { selector: "node[status = 'offline']", style: { "background-color": v("--idle"), "opacity": 0.7 } },
       { selector: "node[kind = 'router']", style: {
         "shape": "round-rectangle", "width": 34, "height": 24, "background-color": v("--router"),
@@ -460,7 +462,7 @@
     const d = n.data();
     if (d.kind === "net") {
       const kids = n.children();
-      const on = kids.filter((c) => c.data("status") === "online").length;
+      const on = kids.filter((c) => ["online", "asleep"].includes(c.data("status"))).length;
       panel.innerHTML = `<button class="btn btn-sm close float-right">×</button><h2>${esc(d.label)}</h2>
         <p class="my-2 text-muted">${kids.length} nodes · ${on} online</p>
         <div class="mt-2 mb-1 flex flex-wrap gap-1.5"><button class="btn btn-sm" type="button" data-scan="${esc(d.network)}">Scan now</button>

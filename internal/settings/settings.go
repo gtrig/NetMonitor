@@ -47,6 +47,30 @@ func channelSecrets(c *config.Channel) []*string {
 	return []*string{&c.BotToken, &c.WebhookURL, &c.Password}
 }
 
+// Secrets returns every secret value in c.
+func Secrets(c *config.Config) []string {
+	var ps []*string
+	if c.Auth != nil {
+		ps = append(ps, &c.Auth.Password)
+	}
+	for i := range c.Routers {
+		ps = append(ps, routerSecrets(&c.Routers[i])...)
+	}
+	for i := range c.SNMPTargets {
+		ps = append(ps, snmpSecrets(&c.SNMPTargets[i])...)
+	}
+	for i := range c.Channels {
+		ps = append(ps, channelSecrets(&c.Channels[i])...)
+	}
+	var out []string
+	for _, p := range ps {
+		if *p != "" {
+			out = append(out, *p)
+		}
+	}
+	return out
+}
+
 // Mask returns the editable sections of raw with secrets hidden and OriginalName set.
 func Mask(raw *config.Config) Editable {
 	workers := raw.Workers
