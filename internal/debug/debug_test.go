@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -61,7 +62,7 @@ func setup(t *testing.T) *env {
 		_, pass, _ := r.BasicAuth()
 		io.WriteString(w, r.Method+" "+r.URL.String()+" "+pass)
 	})
-	e.h = New(Deps{Token: testToken, Logs: e.logs, Store: st, DBPath: db, UI: ui, Raw: func() *config.Config { return e.cfg },
+	e.h = New(Deps{Token: func() string { return testToken }, Logs: e.logs, Store: st, DBPath: db, UI: ui, Raw: func() *config.Config { return e.cfg },
 		Runtime: func() Runtime { return Runtime{Config: e.cfg, Scheduler: e.sched} }})
 	return e
 }
@@ -192,6 +193,7 @@ func TestQueryLimits(t *testing.T) {
 
 func TestSecretsAreHidden(t *testing.T) {
 	e := setup(t)
+	e.logs.Start()
 	log := slog.New(e.logs.Handler(slog.DiscardHandler))
 	log.Warn(`login failed`, "pass", `hunter"2`, "token", testToken)
 	for _, c := range [][2]string{{"logs", `{}`}, {"get", `{"path":"/"}`}, {"query", `{"sql":"SELECT 'hunter\"2'"}`}} {
@@ -206,6 +208,8 @@ func TestLogs(t *testing.T) {
 	l := &Logs{}
 	var b strings.Builder
 	log := slog.New(l.Handler(slog.NewTextHandler(&b, nil))).With("a", 1)
+	log.Debug("off")
+	l.Start()
 	log.Debug("quiet")
 	log.WithGroup("g").Warn("loud", "x", 2)
 	if strings.Contains(b.String(), "quiet") || !strings.Contains(b.String(), "loud") {
@@ -226,6 +230,85 @@ func TestLogs(t *testing.T) {
 	}
 	if n := len(l.entries); n < maxLogs || n > 2*maxLogs {
 		t.Error(n)
+	}
+	l.Stop()
+	log.Warn("after")
+	if len(l.entries) != 0 {
+		t.Error(l.entries)
+	}
+}
+
+func TestManager(t *testing.T) {
+	e := setup(t)
+	path := filepath.Join(t.TempDir(), "token")
+	m := NewManager(Options{TokenPath: path}, Deps{Logs: e.logs, Runtime: func() Runtime { return Runtime{Config: e.cfg, Scheduler: e.sched} }})
+	t.Cleanup(m.Close)
+	ask := func(addr, token string) int {
+		t.Helper()
+		r, _ := http.NewRequest("POST", "http://"+addr+Path, strings.NewReader(pingReq))
+		r.Header.Set("Authorization", "Bearer "+token)
+		res, err := http.DefaultClient.Do(r)
+		if err != nil {
+			return 0
+		}
+		res.Body.Close()
+		return res.StatusCode
+	}
+	m.Apply(config.Debug{})
+	if m.Status().Running || m.Status().Error != "" {
+		t.Fatal(m.Status())
+	}
+	on := config.Debug{Enabled: true, Listen: "127.0.0.1:0"}
+	m.Apply(on)
+	first := m.Status().Addr
+	b, _ := os.ReadFile(path)
+	old := strings.TrimSpace(string(b))
+	if ask(first, old) != 200 {
+		t.Fatal(m.Status())
+	}
+	m.Apply(on)
+	if m.Status().Addr != first {
+		t.Error("restarted without need")
+	}
+	token, err := m.NewToken()
+	if err != nil || ask(first, old) != 401 || ask(first, token) != 200 {
+		t.Error("the new token does not replace the old one", err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Error(fi.Mode())
+	}
+	// Another address.
+	m.Apply(config.Debug{Enabled: true, Listen: "localhost:0"})
+	if second := m.Status().Addr; second == first || ask(first, token) != 0 || ask(second, token) != 200 {
+		t.Error("did not move", first, second)
+	}
+	// A taken address shows, and a later good one recovers.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	m.Apply(config.Debug{Enabled: true, Listen: ln.Addr().String()})
+	if st := m.Status(); st.Running || st.Error == "" {
+		t.Error(st)
+	}
+	m.Apply(on)
+	addr := m.Status().Addr
+	if st := m.Status(); !st.Running || st.Error != "" {
+		t.Error(st)
+	}
+	m.Apply(config.Debug{})
+	if m.Status().Running || ask(addr, token) != 0 {
+		t.Error("still running")
+	}
+	forced := NewManager(Options{Forced: true, Token: testToken}, m.deps)
+	t.Cleanup(forced.Close)
+	forced.Apply(config.Debug{Listen: "127.0.0.1:0"})
+	if st := forced.Status(); !st.Running || !st.TokenGiven || ask(st.Addr, testToken) != 200 {
+		t.Error(st)
+	}
+	if _, err := forced.NewToken(); !errors.Is(err, ErrTokenGiven) {
+		t.Error(err)
 	}
 }
 

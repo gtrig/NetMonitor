@@ -56,8 +56,10 @@ type App struct {
 
 	mu  sync.Mutex // serialises Save/Reload
 	cur sync.Mutex // guards raw and rt
-	raw *config.Config
-	rt  *Runtime
+	// watch is told about every applied config; guarded by mu.
+	watch func(*config.Config)
+	raw   *config.Config
+	rt    *Runtime
 }
 
 // New loads path and starts the first runtime. Runtimes stop when ctx is cancelled or Close is called.
@@ -118,6 +120,14 @@ func (a *App) Current() *Runtime {
 	return a.rt
 }
 
+// Watch calls f with the current config, and with every one applied later.
+func (a *App) Watch(f func(*config.Config)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.watch = f
+	f(a.Current().Config)
+}
+
 // Raw returns a deep copy of the raw config (with ${VAR} references unexpanded).
 func (a *App) Raw() *config.Config {
 	a.cur.Lock()
@@ -174,9 +184,6 @@ func (a *App) swap(raw, eff *config.Config, renames map[string]string) error {
 		slog.Warn("listen/data_dir changes take effect after a restart")
 		eff.Listen, eff.DataDir = old.Config.Listen, old.Config.DataDir
 	}
-	if eff.Debug.Addr() != old.Config.Debug.Addr() {
-		slog.Warn("the debug server keeps its address until a restart", "new", eff.Debug.Addr())
-	}
 	if _, err := notify.FromConfig(eff.Channels); err != nil {
 		return err // fail before stopping the running runtime
 	}
@@ -194,6 +201,9 @@ func (a *App) swap(raw, eff *config.Config, renames map[string]string) error {
 	a.cur.Lock()
 	a.raw, a.rt = raw, rt
 	a.cur.Unlock()
+	if a.watch != nil {
+		a.watch(eff)
+	}
 	slog.Info("configuration applied", "networks", len(eff.Networks), "channels", len(eff.Channels))
 	return nil
 }

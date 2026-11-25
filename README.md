@@ -30,7 +30,7 @@ The container uses `network_mode: host` and the `NET_RAW`/`NET_ADMIN` capabiliti
 
 ## Settings page
 
-Networks, routers, SNMP targets, notification channels and rules can be managed on the **Settings** page, under the **Networks**, **Data sources** and **Notifications** tabs; one **Save changes** covers them all. **System** has the scan workers, the file reload and leftover data. Saving writes `config/config.yaml` and applies the change immediately (no restart); devices and history are kept.
+Networks, routers, SNMP targets, notification channels and rules can be managed on the **Settings** page, under the **Networks**, **Data sources** and **Notifications** tabs; one **Save changes** covers them all. **System** has the scan workers, debug mode, the file reload and leftover data. Saving writes `config/config.yaml` and applies the change immediately (no restart); devices and history are kept.
 
 - **Editing requires `auth:`** in the config (otherwise the page is read-only), since settings control where alerts go.
 - `listen`, `data_dir` and `auth` are only changed in the file (restart to apply), so a UI change can't lock you out.
@@ -127,18 +127,23 @@ It lists the hosts that answered, with their minimum, maximum and average respon
 
 ## Debug mode (MCP)
 
-`netmon -debug` (or `NETMON_DEBUG=1`, also in `.env` for Docker) serves an [MCP](https://modelcontextprotocol.io) server at `/mcp`, port 8099, so that an assistant such as Claude Code can look into the running netmon: status, devices, ping sweep state, events, job history, logs (including debug lines), config, read-only SQL, web pages and goroutines. It can also `ping` addresses of configured networks and start scans; it cannot change anything else.
+netmon can serve an [MCP](https://modelcontextprotocol.io) server at `/mcp`, port 8099, so that an assistant such as Claude Code can look into the running netmon: status, devices, ping sweep state, events, job history, logs (including debug lines), config, read-only SQL, web pages and goroutines. It can also `ping` addresses of configured networks and start scans; it cannot change anything else.
+
+Turn it on under Settings → System → **Debug mode (MCP)**, with `enabled: true` in the file, or with `netmon -debug` (`NETMON_DEBUG=1`, also in `.env` for Docker), which keeps it on whatever the settings say. Changes apply at once. If it cannot start, netmon runs without it and Settings shows why.
 
 Two things protect it:
 
-- **Allowed networks.** Without `allow`, only this machine can connect. List every network that may, including this machine if wanted; changes apply on reload, unless they change the address it listens on:
+- **Allowed networks.** Without `allow`, only this machine can connect. List every network that may, including this machine if wanted:
 
   ```yaml
   debug:
+    enabled: true
     allow: [127.0.0.0/8, 192.168.8.0/24]
     listen: 192.168.8.5:8099   # optional; default: every address if allow has other networks
   ```
-- **A token.** It is created in `data_dir/debug-token`, or set `NETMON_DEBUG_TOKEN` (at least 16 characters).
+- **A token.** It is created in `data_dir/debug-token`; **New token** in Settings replaces it and shows it once, with the snippet below. Or set `NETMON_DEBUG_TOKEN` (at least 16 characters), which cannot be changed in Settings.
+
+Anyone with the web login can turn it on and get a token.
 
 Connect Claude Code, then start a new session:
 

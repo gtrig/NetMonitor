@@ -64,8 +64,9 @@ rules:
   - events: [mac_changed_for_ip]
     channels: [telegram, discord, email]
 
-# Who may connect to the MCP server of debug mode (netmon -debug or NETMON_DEBUG=1). Without allow,
+# The MCP server of debug mode (also on Settings, or netmon -debug). Who may connect: without allow,
 # only this machine. Every client also needs the token. With other networks here it listens on every address, port 8099.
 # debug:
+#   enabled: true
 #   allow: [127.0.0.0/8, 192.168.8.0/24]
 #   listen: 192.168.8.5:8099

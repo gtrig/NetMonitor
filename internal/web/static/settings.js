@@ -1,4 +1,4 @@
-// Settings page: edits networks, routers, SNMP targets, channels, rules and workers, then PUTs them.
+// Settings page: edits networks, routers, SNMP targets, channels, rules, workers and debug mode, then PUTs them.
 (() => {
   const MASKED = "••••••";
   const root = document.getElementById("settings");
@@ -8,9 +8,9 @@
   let meta = {};         // can_edit, event_types, path
   const bar = document.getElementById("savebar");
   const staleEl = document.getElementById("stale");
-  const GROUPS = { networks: ["networks"], sources: ["routers", "snmp_targets"], notifications: ["channels", "rules"], system: ["workers"] };
+  const GROUPS = { networks: ["networks"], sources: ["routers", "snmp_targets"], notifications: ["channels", "rules"], system: ["workers", "debug"] };
   const KINDS = Object.values(GROUPS).flat();
-  const LISTS = KINDS.filter((k) => k !== "workers");
+  const LISTS = KINDS.filter((k) => !GROUPS.system.includes(k));
   const groupOf = (kind) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(kind));
   const open = new Set();  // expanded items (objects in state)
   let saved = {};          // JSON of each kind as last loaded
@@ -73,17 +73,20 @@
     meta = { can_edit: data.can_edit, event_types: data.event_types, path: data.path };
     state = Object.fromEntries(LISTS.map((k) => [k, data[k] || []]));
     state.workers = data.workers || {};
+    state.debug = data.debug || {};
+    state.debug.allow = state.debug.allow || [];
     for (const n of state.networks) { n.sources = n.sources || []; n.exclude = n.exclude || []; }
     open.clear();
     for (const k of KINDS) {
       saved[k] = JSON.stringify(state[k]);
-      if (k !== "workers") state[k].forEach((it, i) => { if (wasOpen.has(key(k, it, i))) open.add(it); });
+      if (LISTS.includes(k)) state[k].forEach((it, i) => { if (wasOpen.has(key(k, it, i))) open.add(it); });
     }
     typing = null;
     document.getElementById("loading").hidden = true;
     document.getElementById("banner").hidden = meta.can_edit;
     document.getElementById("cfgpath").textContent = meta.path;
     render();
+    loadDebug();
   }
 
   // ---- field builders (return HTML; inputs carry data-path into state) ----
@@ -236,8 +239,56 @@
       <p class="mt-2 max-w-[75ch] text-xs text-muted">How many scans run at once; the rest wait in the queue on the Jobs page. Detailed scans are slow and use up to their own limit, which must be lower so a worker is always free to check who is online. Empty uses the default. Saving restarts the scans that are running.</p></div>`;
   }
 
+  // ---- debug mode ----
+  let dbg = null;       // its state, from /api/debug
+  let newToken = null;  // just made; shown until the page is left
+
+  function renderDebug() {
+    root.querySelector('[data-section="debug"]').innerHTML = `<h2>Debug mode (MCP)</h2><div class="card">
+      <p class="mb-2 max-w-[75ch] text-xs text-muted">An MCP server through which an assistant such as Claude Code can look into the running netmon: devices, scans, events, logs, the database and this config (without secrets). It can also start scans and pings. It cannot change settings.</p>
+      ${check("debug.enabled", "Enabled", state.debug.enabled)}
+      <div class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-x-3.5 gap-y-2.5">
+        ${text("debug.allow", "Allowed networks", state.debug.allow.join(", "), { ph: "only this machine" })}
+        ${text("debug.listen", "Listen address", state.debug.listen, { ph: "automatic, port 8099" })}
+      </div>
+      <p class="mt-2 max-w-[75ch] text-xs text-muted">Networks or addresses, comma separated. Once you list any, only those can connect: add 127.0.0.0/8 to keep this machine. Clients also need the token. Traffic is not encrypted, so allow only networks you trust.</p>
+      <div class="mt-3 border-t pt-3" id="debug-status"></div></div>`;
+    renderDebugStatus();
+  }
+
+  // The address clients reach the server at.
+  function debugURL() {
+    const port = dbg.addr.slice(dbg.addr.lastIndexOf(":") + 1);
+    const host = dbg.addr.slice(0, dbg.addr.lastIndexOf(":"));
+    return `http://${["", "0.0.0.0", "[::]"].includes(host) ? location.hostname : host}:${port}/mcp`;
+  }
+  const debugSnippet = () => JSON.stringify({ mcpServers: { netmon: { type: "http", url: dbg.running ? debugURL() : "http://127.0.0.1:8099/mcp", headers: { Authorization: `Bearer ${newToken}` } } } }, null, 2);
+
+  function renderDebugStatus() {
+    const el = document.getElementById("debug-status");
+    if (!el || !dbg) return;
+    const why = dbg.forced ? " It was turned on with -debug or NETMON_DEBUG, so it stays on." : "";
+    const status = dbg.running ? `<span class="pill bg-ok"></span>Running at <span class="mono wrap-break-word">${esc(debugURL())}</span>.${why}`
+      : dbg.error ? `<span class="pill bg-bad"></span>Could not start: ${esc(dbg.error)}` : `<span class="pill"></span>Not running.`;
+    el.innerHTML = `<div class="flex flex-wrap items-center gap-3"><p class="min-w-0 flex-1" role="status">${status}</p>
+      ${meta.can_edit && !dbg.token_given ? `<button class="btn btn-sm" data-new-token type="button">New token</button>` : ""}</div>
+      ${dbg.token_given ? `<p class="mt-1 text-xs text-muted">The token is set by NETMON_DEBUG_TOKEN.</p>` : ""}
+      ${newToken ? `<p class="mt-3 text-xs text-muted">The token is shown only now. Put this in <code>.mcp.json</code> in the folder you run Claude Code in, then start a new session:</p>
+        <pre class="mono mt-2 overflow-x-auto text-xs">${esc(debugSnippet())}</pre>
+        ${navigator.clipboard ? `<button class="btn btn-sm mt-2" data-copy-token type="button">Copy</button>` : ""}` : ""}`;
+  }
+
+  async function loadDebug() {
+    try { dbg = await api("GET", "/api/debug"); } catch { return; }
+    renderDebugStatus();
+  }
+
+  // Bare addresses become networks of one.
+  const asNetwork = (a) => (a.includes("/") || !/^[\d.]+$|:/.test(a) ? a : `${a}/${a.includes(":") ? 128 : 32}`);
+
   const renderers = {
     workers: renderWorkers,
+    debug: renderDebug,
     networks: () => section("networks", "Networks", "Add network", renderNetworks(), "Each network is scanned by its sources; hosts outside the CIDR are ignored. ping and nmap find who is online; services runs a slow detailed scan (open ports, service versions, OS) of the hosts that are online.", "No networks yet. Add one to start discovering devices."),
     routers: () => section("routers", "Routers", "Add router", renderRouters(), "MikroTik routers, read over the RouterOS API. Use a read-only API user. Secrets can be written as ${NAME} to keep them in .env.", "No routers yet."),
     snmp_targets: () => section("snmp_targets", "SNMP targets", "Add SNMP target", renderSNMP(), "", "No SNMP targets yet."),
@@ -253,7 +304,7 @@
     if (el) el.innerHTML = summary(kind, i);
   }
   // Sections that show the names of another section's items.
-  const dependents = { networks: ["rules"], routers: ["networks"], snmp_targets: ["networks"], channels: ["rules"], rules: [], workers: [] };
+  const dependents = { networks: ["rules"], routers: ["networks"], snmp_targets: ["networks"], channels: ["rules"], rules: [], workers: [], debug: [] };
 
   // ---- state updates ----
   function setPath(path, value) {
@@ -278,7 +329,7 @@
     }
   }
 
-  const listFields = /\.(exclude|to)$/;
+  const listFields = /\.(exclude|to|allow)$/;
   const numFields = /\.(port|smtp_port|scans|detailed)$/;
   // Re-render after focus has moved (e.g. Tab), then put focus back on the same field.
   function renderKeepingFocus(kinds) {
@@ -304,6 +355,7 @@
     if (!path) return;
     let v = el.type === "checkbox" ? el.checked : el.value.trim();
     if (listFields.test(path)) v = v ? v.split(",").map((x) => x.trim()).filter(Boolean) : [];
+    if (path === "debug.allow") { v = v.map(asNetwork); el.value = v.join(", "); }
     else if (path.endsWith(".args")) v = v ? v.split(/\s+/) : [];
     else if (numFields.test(path)) v = v ? Number(v) : 0;
     else if ("secret" in el.dataset && v === "") v = getPath(path) === MASKED ? MASKED : getPath(path) || "";
@@ -343,8 +395,16 @@
     channels: () => ({ name: "", type: "telegram" }),
     rules: () => ({ events: ["device_new"], channels: [], only_unknown: true }),
   };
-  root.addEventListener("click", (e) => {
+  root.addEventListener("click", async (e) => {
     const t = e.target;
+    if ("newToken" in t.dataset) {
+      if (!confirm("Make a new token? Clients using the current one lose access.")) return;
+      try { newToken = (await api("POST", "/api/debug/token")).token; } catch (err) { return toast("Failed: " + err.message); }
+      renderDebugStatus();
+    }
+    if ("copyToken" in t.dataset) {
+      try { await navigator.clipboard.writeText(debugSnippet()); toast("Copied"); } catch (err) { toast("Failed: " + err.message); }
+    }
     if (t.dataset.add) {
       const kind = t.dataset.add;
       const it = blank[kind]();

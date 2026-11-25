@@ -4,10 +4,8 @@ package debug
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
 	"html/template"
@@ -16,7 +14,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -61,7 +58,7 @@ type Runtime struct {
 
 // Deps are the server's collaborators.
 type Deps struct {
-	Token      string
+	Token      func() string // the current one; "" lets nobody in
 	Logs       *Logs
 	Store      *store.Store
 	DBPath     string
@@ -86,28 +83,6 @@ func New(d Deps) http.Handler {
 	return s.guard(mux)
 }
 
-// LoadToken returns the access token and where it comes from: given, or kept in the file at path,
-// which is created if needed.
-func LoadToken(given, path string) (token, where string, err error) {
-	where = "NETMON_DEBUG_TOKEN"
-	if given == "" {
-		where = path
-		b, err := os.ReadFile(path)
-		if errors.Is(err, os.ErrNotExist) {
-			b = []byte(rand.Text() + "\n")
-			err = os.WriteFile(path, b, 0o600)
-		}
-		if err != nil {
-			return "", "", fmt.Errorf("debug token: %w", err)
-		}
-		given = strings.TrimSpace(string(b))
-	}
-	if len(given) < minToken {
-		return "", "", fmt.Errorf("debug token in %s: must have at least %d characters", where, minToken)
-	}
-	return given, where, nil
-}
-
 // guard lets only allowed networks in, and of those only clients with the token.
 func (s *server) guard(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +94,8 @@ func (s *server) guard(h http.Handler) http.Handler {
 			return
 		}
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(s.Token)) != 1 {
+		token := s.Token()
+		if !ok || token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
 			slog.Warn("debug server: refused, wrong or missing token", "from", r.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -264,7 +240,7 @@ func (s *server) run(ctx context.Context, t tool, args json.RawMessage) (text st
 // the escaped forms that JSON, log lines, pages and URLs give them.
 func (s *server) redact(text string) string {
 	var forms []string
-	for _, v := range append(settings.Secrets(s.Runtime().Config), s.Token) {
+	for _, v := range append(settings.Secrets(s.Runtime().Config), s.Token()) {
 		if len(v) < 4 {
 			continue // would garble everything
 		}

@@ -184,3 +184,20 @@ func TestDefaultBuildPingJobs(t *testing.T) {
 		t.Fatalf("ping jobs = %v", got)
 	}
 }
+
+func TestWatchSeesEveryAppliedConfig(t *testing.T) {
+	a, _ := setup(t)
+	var seen []bool
+	a.Watch(func(c *config.Config) { seen = append(seen, c.Debug.Enabled) })
+	raw := a.Raw()
+	raw.Debug.Enabled = true
+	if err := a.Save(raw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Reload(); err != nil { // the file kept it
+		t.Fatal(err)
+	}
+	if len(seen) != 3 || seen[0] || !seen[1] || !seen[2] {
+		t.Fatal(seen)
+	}
+}

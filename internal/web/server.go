@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gtrig/netmon/internal/config"
+	"github.com/gtrig/netmon/internal/debug"
 	"github.com/gtrig/netmon/internal/model"
 	"github.com/gtrig/netmon/internal/notify"
 	"github.com/gtrig/netmon/internal/scheduler"
@@ -58,11 +59,18 @@ type Settings interface {
 	Path() string
 }
 
+// Debug is the MCP server of debug mode.
+type Debug interface {
+	Status() debug.Status
+	NewToken() (string, error)
+}
+
 // Deps are the server's collaborators.
 type Deps struct {
 	Store    *store.Store
 	Runtime  func() Runtime
 	Settings Settings
+	Debug    Debug // nil: no debug mode
 	// Wake sends a Wake-on-LAN packet for mac on network, through router unless it is nil
 	// (nil: sendWake).
 	Wake func(ctx context.Context, router *config.Router, mac string, network netip.Prefix) error
@@ -145,6 +153,9 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/settings", s.apiGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.apiPutSettings)
 	mux.HandleFunc("POST /api/settings/reload", s.apiReloadSettings)
+
+	mux.HandleFunc("GET /api/debug", s.apiDebug)
+	mux.HandleFunc("POST /api/debug/token", s.apiDebugToken)
 
 	root := http.NewServeMux()
 	root.HandleFunc("GET /healthz", s.healthz)
@@ -663,6 +674,36 @@ func (s *server) apiReloadSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) apiDebug(w http.ResponseWriter, r *http.Request) {
+	if s.Debug == nil {
+		http.Error(w, "debug mode is not available", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, s.Debug.Status())
+}
+
+// apiDebugToken replaces the token; this answer is the only time it is shown.
+func (s *server) apiDebugToken(w http.ResponseWriter, r *http.Request) {
+	if !s.canEdit() {
+		http.Error(w, "read-only until auth is configured", http.StatusForbidden)
+		return
+	}
+	if s.Debug == nil {
+		http.Error(w, "debug mode is not available", http.StatusNotFound)
+		return
+	}
+	token, err := s.Debug.NewToken()
+	switch {
+	case errors.Is(err, debug.ErrTokenGiven):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case err != nil:
+		serverError(w, err)
+	default:
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, map[string]string{"token": token})
+	}
 }
 
 // routerAddrs maps each configured router to the IP netmon reaches it at (host names are skipped).

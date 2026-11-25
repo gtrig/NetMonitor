@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,13 +24,25 @@ type Entry struct {
 
 // Logs keeps the latest log records, including debug ones, in memory.
 type Logs struct {
+	on      atomic.Bool
 	mu      sync.Mutex
 	seq     int64
 	entries []Entry
 	cur     Entry // being written
 }
 
-// Handler returns a handler that keeps every record and passes on to next what it wants.
+// Start begins keeping records.
+func (l *Logs) Start() { l.on.Store(true) }
+
+// Stop drops the records and keeps no more.
+func (l *Logs) Stop() {
+	l.on.Store(false)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries = nil
+}
+
+// Handler returns a handler that keeps every record while started and passes on to next what it wants.
 func (l *Logs) Handler(next slog.Handler) slog.Handler {
 	text := slog.NewTextHandler((*logWriter)(l), &slog.HandlerOptions{Level: slog.LevelDebug,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
@@ -81,12 +94,17 @@ type tee struct {
 	text, next slog.Handler
 }
 
-func (t *tee) Enabled(context.Context, slog.Level) bool { return true }
+func (t *tee) Enabled(ctx context.Context, level slog.Level) bool {
+	return t.logs.on.Load() || t.next.Enabled(ctx, level)
+}
 
 func (t *tee) Handle(ctx context.Context, r slog.Record) error {
+	var err error
 	t.logs.mu.Lock()
-	t.logs.cur = Entry{At: r.Time, Level: r.Level.String(), level: r.Level}
-	err := t.text.Handle(ctx, r)
+	if t.logs.on.Load() {
+		t.logs.cur = Entry{At: r.Time, Level: r.Level.String(), level: r.Level}
+		err = t.text.Handle(ctx, r)
+	}
 	t.logs.mu.Unlock()
 	if t.next.Enabled(ctx, r.Level) {
 		return t.next.Handle(ctx, r)

@@ -51,13 +51,15 @@ type Config struct {
 	Debug       Debug        `yaml:"debug,omitempty" json:"-"`
 }
 
-// Debug is the MCP server of debug mode (netmon -debug); it does nothing otherwise.
+// Debug is the MCP server of debug mode.
 type Debug struct {
+	// Enabled turns it on; netmon -debug does too.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled"`
 	// Listen is its address; empty means DebugPort on this machine, or on every address when Allow
 	// has networks other than this machine.
-	Listen string `yaml:"listen,omitempty"`
+	Listen string `yaml:"listen,omitempty" json:"listen"`
 	// Allow are the networks that may connect; empty means only this machine.
-	Allow []netip.Prefix `yaml:"allow,omitempty"`
+	Allow []netip.Prefix `yaml:"allow,omitempty" json:"allow"`
 }
 
 // DebugPort is the default port of the debug server.
