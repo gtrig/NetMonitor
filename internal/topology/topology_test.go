@@ -278,7 +278,7 @@ func TestConfiguredRouterMergesWithItsDevice(t *testing.T) {
 		{Network: "VPN", Key: "ip:10.0.10.6"}:            1,
 	}
 	els := Build(Input{Devices: devs, Machines: machines, Compound: true,
-		Networks:    []NetInfo{{"ATLan", netip.MustParsePrefix("192.168.88.0/24")}, {"VPN", netip.MustParsePrefix("10.0.10.0/24")}},
+		Networks:    []NetInfo{{Name: "ATLan", CIDR: netip.MustParsePrefix("192.168.88.0/24")}, {Name: "VPN", CIDR: netip.MustParsePrefix("10.0.10.0/24")}},
 		Gateways:    map[string]string{"ATLan": "ATHome"},
 		RouterAddrs: map[string]netip.Addr{"ATHome": netip.MustParseAddr("192.168.88.1")},
 		Links: []model.Link{
@@ -311,7 +311,7 @@ func TestCompoundUnlinkedHostsAttachToConfiguredRouter(t *testing.T) {
 		deviceIn("VPN", "ip:10.0.10.1", "10.0.10.1"),
 	}
 	els := Build(Input{Devices: devs, Compound: true,
-		Networks: []NetInfo{{"ATLan", netip.MustParsePrefix("192.168.88.0/24")}, {"VPN", netip.MustParsePrefix("10.0.10.0/24")}},
+		Networks: []NetInfo{{Name: "ATLan", CIDR: netip.MustParsePrefix("192.168.88.0/24")}, {Name: "VPN", CIDR: netip.MustParsePrefix("10.0.10.0/24")}},
 		Gateways: map[string]string{"ATLan": "ATHome"},
 		Links:    []model.Link{{A: router("ATHome"), B: devRef("mac:aa:00:00:00:00:10")}}})
 	n, e := nodes(els), edges(els)

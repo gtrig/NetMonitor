@@ -30,6 +30,7 @@ networks:
     # exclude: [192.168.88.254]
     # offline_after: 15m   # default: a device is offline once no source saw it in its
     #                      # latest scan and one source has missed it for 3 of its intervals
+    # hub: 192.168.88.1    # map: link every device to this one (for a VPN, its server)
     # auto_details: false  # do not scan new devices in detail automatically
     sources:
       - {type: router, ref: core, interval: 1m}

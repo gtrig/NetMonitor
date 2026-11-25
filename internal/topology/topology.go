@@ -3,6 +3,7 @@ package topology
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
 	"slices"
 	"sort"
@@ -22,6 +23,8 @@ type Element struct {
 type NetInfo struct {
 	Name string
 	CIDR netip.Prefix
+	// Hub is the address of the device the others connect through, if there is one.
+	Hub netip.Addr
 }
 
 // Input is everything the map is built from.
@@ -90,6 +93,39 @@ func Build(in Input) []Element {
 			ipHasMAC[d.IP] = d.MAC != ""
 		}
 	}
+
+	netOf := func(ip netip.Addr) string {
+		for _, n := range in.Networks {
+			if n.CIDR.Contains(ip) {
+				return n.Name
+			}
+		}
+		return ""
+	}
+
+	hubs := map[string]string{} // network → node of its hub; a hub not seen yet is ignored
+	hubOf := map[string][]string{}
+	for _, n := range in.Networks {
+		for _, id := range order {
+			if n.Hub.IsValid() && slices.ContainsFunc(groups[id].members, func(d model.Device) bool {
+				return d.Network == n.Name && d.IP == n.Hub
+			}) {
+				hubs[n.Name] = id
+				hubOf[id] = append(hubOf[id], n.Name)
+				groups[id].router = true
+				break
+			}
+		}
+	}
+	// What traces of a network with a hub pass outside the known networks is left out: the hub's
+	// lines stand for the paths in between.
+	foreign := func(r model.NodeRef) bool {
+		ip, err := netip.ParseAddr(r.ID)
+		return r.Kind == "router" && err == nil && ipNode[ip] == "" && netOf(ip) == ""
+	}
+	in.Links = slices.DeleteFunc(slices.Clone(in.Links), func(l model.Link) bool {
+		return hubs[l.Network] != "" && (foreign(l.A) || foreign(l.B))
+	})
 
 	routers := map[string]bool{} // config-named routers
 	hops := map[string]netip.Addr{}
@@ -203,18 +239,23 @@ func Build(in Input) []Element {
 		}
 	}
 
-	netOf := func(ip netip.Addr) string {
-		for _, n := range in.Networks {
-			if n.CIDR.Contains(ip) {
-				return n.Name
+	for _, id := range order {
+		for _, n := range groups[id].networks() {
+			hub := hubs[n]
+			if hub == "" || hub == id {
+				continue
+			}
+			_, ok := edgesByPair[hub+"|"+id]
+			_, rev := edgesByPair[id+"|"+hub]
+			if !ok && !rev {
+				edgesByPair[hub+"|"+id] = edge{a: hub, b: id, kind: "link"}
 			}
 		}
-		return ""
 	}
 
 	// A router node with an address inside a network is that network's gateway: hosts there with
 	// no link of their own (one-hop traces on netmon's own LAN, nmap without traceroute) hang off it.
-	inferred := map[string]string{}
+	inferred := maps.Clone(hubs)
 	for _, id := range order {
 		if !groups[id].router {
 			continue
@@ -230,7 +271,9 @@ func Build(in Input) []Element {
 	for _, n := range sortedKeys(in.Gateways) {
 		if name := in.Gateways[n]; name != "" {
 			if id, ok := resolve(model.NodeRef{Kind: "router", ID: name}); ok {
-				inferred[n] = id
+				if hubs[n] == "" {
+					inferred[n] = id
+				}
 				gatewayOf[id] = append(gatewayOf[id], n)
 			}
 		}
@@ -300,6 +343,10 @@ func Build(in Input) []Element {
 			}
 			best, tie := "", false
 			for _, n := range nets {
+				if hubs[n] == id {
+					best, tie = n, false
+					break
+				}
 				switch {
 				case transit(n) < 0.5:
 				case best == "" || transit(n) > transit(best):
@@ -315,7 +362,7 @@ func Build(in Input) []Element {
 				parents[id] = "net:" + best
 			}
 			for _, n := range nets {
-				if n != best {
+				if n != best && hubs[n] == "" { // a hub's line already ties it to its network
 					edgesByPair[id+"|net:"+n] = edge{a: id, b: "net:" + n, kind: "member"}
 				}
 			}
@@ -362,6 +409,9 @@ func Build(in Input) []Element {
 	withParent := func(id string, data map[string]any) map[string]any {
 		if nets := gatewayOf[id]; len(nets) > 0 {
 			data["gatewayOf"] = nets
+		}
+		if nets := hubOf[id]; len(nets) > 0 {
+			data["hubOf"] = nets
 		}
 		if p := parents[id]; p != "" {
 			data["parent"] = p

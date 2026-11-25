@@ -357,7 +357,7 @@ func (s *server) apiGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	var nets []topology.NetInfo
 	for _, n := range rt.Config.Networks {
-		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR})
+		nets = append(nets, topology.NetInfo{Name: n.Name, CIDR: n.CIDR, Hub: n.HubAddr()})
 	}
 	els := topology.Build(topology.Input{Devices: devs, Links: links, Gateways: rt.Gateways, Machines: machines, Pings: pings, Presence: rt.Scheduler.Presence(devs),
 		Networks: nets, RouterAddrs: routerAddrs(rt.Config), Compound: network == "" && len(nets) > 1})

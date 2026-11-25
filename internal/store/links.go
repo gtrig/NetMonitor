@@ -27,7 +27,7 @@ func (s *Store) ReplaceLinks(ctx context.Context, network, source string, links 
 
 // Links returns all links of network ("" = all networks).
 func (s *Store) Links(ctx context.Context, network string) ([]model.Link, error) {
-	q := `SELECT source, a_kind, a_id, b_kind, b_id, label FROM links`
+	q := `SELECT network, source, a_kind, a_id, b_kind, b_id, label FROM links`
 	var args []any
 	if network != "" {
 		q += ` WHERE network = ?`
@@ -41,7 +41,7 @@ func (s *Store) Links(ctx context.Context, network string) ([]model.Link, error)
 	var out []model.Link
 	for rows.Next() {
 		var l model.Link
-		if err := rows.Scan(&l.Source, &l.A.Kind, &l.A.ID, &l.B.Kind, &l.B.ID, &l.Label); err != nil {
+		if err := rows.Scan(&l.Network, &l.Source, &l.A.Kind, &l.A.ID, &l.B.Kind, &l.B.ID, &l.Label); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

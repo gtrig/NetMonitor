@@ -163,6 +163,7 @@
           ${text(`networks.${i}.cidr`, "CIDR", n.cidr, { ph: "192.168.1.0/24" })}
           ${text(`networks.${i}.exclude`, "Exclude IPs", n.exclude.join(", "), { ph: "comma separated" })}
           ${text(`networks.${i}.offline_after`, "Offline after", n.offline_after, { ph: "auto (3 missed scans)" })}
+          ${text(`networks.${i}.hub`, "Map hub", n.hub, { ph: "none; e.g. the VPN server's IP" })}
         </div>
         ${check(`networks.${i}.auto_details`, "Scan new devices in detail automatically (open ports, services, OS)", n.auto_details ?? true)}
         <div class="mt-3 grid justify-items-start gap-2"><span class="sub">Discovery sources</span>${sources}

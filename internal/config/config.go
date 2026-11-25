@@ -150,8 +150,16 @@ type Network struct {
 	Sources      []SourceRef  `yaml:"sources,omitempty" json:"sources,omitempty"`
 	Exclude      []netip.Addr `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 	OfflineAfter Duration     `yaml:"offline_after,omitempty" json:"offline_after,omitempty"`
+	// Hub is the address of the device the others of this network connect through, for the map.
+	Hub string `yaml:"hub,omitempty" json:"hub,omitempty"`
 	// AutoDetails scans new devices in detail once they are seen; nil means on.
 	AutoDetails *bool `yaml:"auto_details,omitempty" json:"auto_details,omitempty"`
+}
+
+// HubAddr is the parsed hub; invalid when there is none.
+func (n Network) HubAddr() netip.Addr {
+	a, _ := netip.ParseAddr(n.Hub)
+	return a
 }
 
 // AutoDetailsOn reports whether devices without a detailed scan get one automatically.
@@ -395,6 +403,16 @@ func (c *Config) Validate() error {
 		nets[n.Name] = true
 		if !n.CIDR.IsValid() {
 			bad("network %q: cidr is required", n.Name)
+		}
+		if n.Hub != "" {
+			switch hub := n.HubAddr(); {
+			case !hub.IsValid():
+				bad("network %q: hub %q is not an IP address", n.Name, n.Hub)
+			case n.CIDR.IsValid() && !n.CIDR.Contains(hub):
+				bad("network %q: hub %s is outside %s", n.Name, hub, n.CIDR)
+			case slices.Contains(n.Exclude, hub):
+				bad("network %q: hub %s is excluded", n.Name, hub)
+			}
 		}
 		if len(n.Sources) == 0 {
 			bad("network %q: at least one source is required", n.Name)

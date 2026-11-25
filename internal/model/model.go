@@ -30,9 +30,10 @@ type NodeRef struct {
 
 // Link is an edge between two topology nodes.
 type Link struct {
-	A, B   NodeRef
-	Label  string
-	Source string
+	A, B    NodeRef
+	Label   string
+	Source  string
+	Network string // set when read from the store
 }
 
 // Observations is the result of one collection by one source for one network.

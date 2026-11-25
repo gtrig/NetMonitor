@@ -67,6 +67,7 @@
         "label": (e) => (opts.ports ? e.data("label") || "" : ""), "font-size": 8, "color": v("--muted"), "text-rotation": "autorotate",
         "text-background-color": v("--surface"), "text-background-opacity": 1 } },
       { selector: "edge[source ^= 'router:'][target ^= 'router:']", style: { "width": 3, "line-color": v("--router") } },
+      { selector: "edge.trunk", style: { "width": 2.5, "line-color": v("--router") } },
       { selector: ":selected", style: { "border-color": v("--accent"), "border-width": 3 } },
     { selector: ".off", style: { "display": "none" } },
   ];
@@ -77,6 +78,8 @@
 
   let graph = [], els = [], decor = [], hover = null;
   const trunkEnd = (n) => n.data("router") || ["router", "hop", "netmon"].includes(n.data("kind"));
+
+  const isTrunk = (e) => e.data("kind") !== "member" && !!trunkEnd(e.source()) && !!trunkEnd(e.target());
 
   // apply puts the elements and their positions into the graph. Existing nodes glide to their new
   // place when animated; pan, zoom and selection stay unless refit.
@@ -96,12 +99,12 @@
           if (group === "edges" && cur.length && (cur.data("source") !== source || cur.data("target") !== target)) { cur.remove(); cur = cy.getElementById(id); }
           if (!cur.length) { cy.add({ group, data: { ...e.data }, position: positions[id] && { ...positions[id] } }); continue; }
           cur.data(data);
-          for (const k of ["rtt", "gatewayOf", "router", "machine"]) if (!(k in data)) cur.removeData(k);
+          for (const k of ["rtt", "gatewayOf", "hubOf", "router", "machine"]) if (!(k in data)) cur.removeData(k);
           if (group === "nodes" && (cur.data("parent") || undefined) !== parent) cur.move({ parent: parent ?? null });
         }
       }
       cy.edges().forEach((e) => {
-        e.toggleClass("trunk", e.data("kind") !== "member" && !!trunkEnd(e.source()) && !!trunkEnd(e.target()));
+        e.toggleClass("trunk", isTrunk(e));
         e.toggleClass("off", !opts.lines);
       });
       cy.nodes("[kind != 'net']").forEach((n) => { n.toggleClass("off", !positions[n.id()]); });
@@ -128,11 +131,11 @@
     else for (const e of els) {
       const cur = cy.getElementById(e.data.id), { id, parent, source, target, ...data } = e.data;
       cur.data(data);
-      for (const k of ["rtt", "gatewayOf", "router", "machine"]) if (!(k in data)) cur.removeData(k);
+      for (const k of ["rtt", "gatewayOf", "hubOf", "router", "machine"]) if (!(k in data)) cur.removeData(k);
       if (e.group === "nodes" && (cur.data("parent") || undefined) !== parent) cur.move({ parent: parent ?? null });
     }
     cy.batch(() => {
-      cy.edges().forEach((e) => { e.toggleClass("off", !opts.lines); });
+      cy.edges().forEach((e) => { e.toggleClass("trunk", isTrunk(e)); e.toggleClass("off", !opts.lines); });
       cy.nodes().forEach((n) => { n.toggleClass("off", !opts.offline && n.data("status") === "offline"); });
     });
     if (changed || refit) cy.nodes("[kind = 'net']").length ? boxLayout() : cose();
@@ -169,10 +172,11 @@
     outer.forEach((id, i) => { angle[id] = Math.PI + (2 * Math.PI * i) / outer.length; });
 
     const place = (n, x, y) => n.position({ x, y });
-    // Routers in the centre, everything else in rings around them, centred on (0, 0).
+    const isHub = (n) => (n.data("hubOf") || []).some((x) => "net:" + x === boxOf(n));
+    // The hub or else the routers in the centre, everything else in rings around them, centred on (0, 0).
     const rings = (nodes) => {
       const sorted = nodes.sort((a, b) => String(a.data("label")).localeCompare(String(b.data("label"))));
-      const routers = sorted.filter(isRouter), rest = sorted.filter((n) => !isRouter(n));
+      const hubs = sorted.filter(isHub), routers = hubs.length ? hubs : sorted.filter(isRouter), rest = sorted.difference(routers);
       routers.forEach((n, i) => place(n, (i - (routers.length - 1) / 2) * 70, 0));
       const base = routers.length > 1 ? routers.length * 35 : 0;
       for (let i = 0, k = 1; i < rest.length; k++) {
@@ -190,6 +194,7 @@
     const hubKids = cy.getElementById(hub).children();
     const side = {}, middle = [];
     hubKids.forEach((n) => {
+      if (isHub(n)) { middle.push(n); return; }
       const c = {};
       n.connectedEdges().forEach((e) => {
         const o = e.source().same(n) ? e.target() : e.source();
